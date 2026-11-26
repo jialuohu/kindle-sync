@@ -15,9 +15,9 @@ import (
 	"time"
 	"unicode"
 
-	"kindle-sync/internal/model"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
+	"kindle-sync/internal/model"
 )
 
 // MaxPDFUploadBytes reserves 8 KiB for message headers and MIME delimiters

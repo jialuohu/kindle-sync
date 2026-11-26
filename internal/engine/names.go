@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/unicode/norm"
 	"kindle-sync/internal/model"
 	"kindle-sync/internal/naming"
-	"golang.org/x/text/unicode/norm"
 )
 
 func foldedName(name string) string {

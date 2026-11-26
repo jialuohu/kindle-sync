@@ -15,3 +15,7 @@ koofr-username
 koofr-password
 *.sqlite
 *.sqlite-*
+*.pdf
+*.eml
+client_secret_*.json
+.DS_Store

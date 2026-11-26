@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"strings"
 
-	"kindle-sync/internal/model"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi"
+	"kindle-sync/internal/model"
 )
 
 const maxReturnBytes = 200 << 20 // Matches the PDF bound enforced by the archiver.

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Kindle Notes for Zotero",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Open the newest Kindle Sync notes PDF when opening a paper in Zotero.",
   "applications": {
     "zotero": {

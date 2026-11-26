@@ -8,8 +8,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"kindle-sync/internal/model"
 	"golang.org/x/text/unicode/norm"
+	"kindle-sync/internal/model"
 )
 
 var fourDigitYear = regexp.MustCompile(`^[1-9][0-9]{3}$`)
