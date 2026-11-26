@@ -238,6 +238,7 @@ def _find_attachment(
         for child in children
         if _record_data(child).get("itemType") == "attachment"
         and _record_data(child).get("parentItem") == parent_key
+        and not _record_data(child).get("deleted")
     ]
     if attachment_key is not None:
         for child in attachments:
@@ -289,6 +290,7 @@ def _matching_imported_pdf_children(
         if (
             data.get("itemType") == "attachment"
             and data.get("parentItem") == parent_key
+            and not data.get("deleted")
             and data.get("linkMode") == "imported_file"
             and data.get("contentType") in ("", "application/pdf", None)
             and isinstance(filename, str)
@@ -790,6 +792,7 @@ def _attachment_metadata_matches(
     matches = (
         _record_key(record)
         and data.get("itemType") == "attachment"
+        and not data.get("deleted")
         and data.get("linkMode") == "imported_file"
         and data.get("parentItem") == parent_key
         and data.get("filename") == basename

@@ -66,9 +66,9 @@ Kindle Sync checks Drive metadata before downloading. The filename must identify
 | The export has an unknown or ambiguous name | Leaves it in Drive without downloading it or adding it to a matching queue. |
 | You moved the sent paper out of the reading collection | Attaches notes to the paper using its original Zotero item key. |
 | You trashed or permanently deleted the paper | Leaves the export in Drive. |
-| You exported the same paper again | Skips a Drive revision already archived. For a new file or revision, identical PDF bytes reuse the paper's existing attachment. Changed bytes create another **Kindle Notes** attachment. |
+| You exported the same paper again | Identical PDF bytes reuse the current attachment. A newer export with changed bytes replaces it after the new copy is verified. An older export arriving later cannot replace newer notes. |
 
-When one scan finds several versions, it archives them oldest first by Drive modification time, falling back to creation time. The optional Zotero plugin opens the most recently added notes attachment.
+For revisions of one Drive file, the higher revision number wins. For separate uploads, Kindle Sync compares modification times, falling back to creation times. It moves superseded attachments it previously archived to Zotero Trash, where you can recover them. Drive exports and the original paper stay in place.
 
 ## Run on a schedule
 
@@ -92,6 +92,7 @@ Run `ks status --json` for delivery states, attachment candidates, Gmail message
 | Amazon rejected the message | Verify the corresponding Gmail ID in status, run `ks resolve ITEM_KEY rejected GMAIL_ID`, then `ks sync --item ITEM_KEY` to resend. |
 | `manual_upload` | Upload the PDF at `manual_file`. To return its notes, use `ks match DRIVE_FILE_ID ITEM_KEY`. [Send to Kindle](https://www.amazon.com/sendtokindle) |
 | You want to attach a specific export manually | Run `ks match DRIVE_FILE_ID ITEM_KEY`. To select a revision cached by an older installation, add `--version VERSION`. |
+| A sync cannot determine which older notes are newest | Earlier installations may lack export dates. Share a fresh copy from the Kindle. Its upload time lets the next sync safely replace the older attachments. |
 
 Each paper gets its own email. The default `email_limit_bytes` is 25,000,000, the personal Gmail attachment limit. Workspace administrators can set a different limit. The CLI also accounts for the encoded message size. Amazon accepts up to 50 MB by email and 200 MB per web upload. [Gmail limits](https://support.google.com/mail/answer/6584?hl=en) · [Kindle email limits](https://digprjsurvey.amazon.com/csad/help/node/G7NECT4B4ZWHQ8WV) · [Web upload limits](https://digprjsurvey.amazon.com/csad/help/node/G5WYD9SAF7PGXRNA)
 

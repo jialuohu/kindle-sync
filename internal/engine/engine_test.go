@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ type fakeLibrary struct {
 	pdfs        map[string]string
 	archives    []savedPDF
 	partial     bool
+	retired     []string
 }
 type savedPDF struct{ parent, name, bytes, previous string }
 
@@ -49,11 +51,22 @@ func (z *fakeLibrary) Archive(_ context.Context, parent, p, key string) (string,
 		return "", err
 	}
 	z.archives = append(z.archives, savedPDF{parent, filepath.Base(p), string(b), key})
+	if key == "" {
+		key = "child-key"
+		if len(z.archives) > 1 {
+			key = fmt.Sprintf("child-%d", len(z.archives))
+		}
+	}
 	if z.partial {
 		z.partial = false
-		return "child-key", errors.New("upload interrupted")
+		return key, errors.New("upload interrupted")
 	}
-	return "child-key", nil
+	return key, nil
+}
+
+func (z *fakeLibrary) RetireNotes(_ context.Context, parent string, keep, old model.Receipt) error {
+	z.retired = append(z.retired, old.Child)
+	return nil
 }
 
 type fakeGoogle struct {

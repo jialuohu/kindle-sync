@@ -42,6 +42,7 @@ def main(interval=300):
             "event": "sync_finished", "started_at": started, "finished_at": timestamp(),
             "exit_code": code, "submitted": sum(a.startswith("submitted ") for a in actions),
             "archived": sum(a.startswith("archived ") for a in actions),
+            "retired": sum(a.startswith("retired older notes: ") for a in actions),
             "problems": max(len(problems), int(code != 0)),
         }), flush=True)
         elapsed = time.monotonic() - tick

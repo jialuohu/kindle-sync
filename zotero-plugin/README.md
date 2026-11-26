@@ -1,6 +1,6 @@
 # Kindle Notes for Zotero
 
-Double-click a paper in Zotero, or select it and press Enter, to open its most recently added Kindle Notes PDF. Expand the paper to open the original PDF or an earlier export. Papers without Kindle Notes open normally.
+Double-click a paper in Zotero, or select it and press Enter, to open its current Kindle Notes PDF. Expand the paper to open the original PDF. Papers without Kindle Notes open normally.
 
 ## Install
 

@@ -19,10 +19,11 @@ Run every command against the deployment that owns the queue. Use the executable
 
 For a title, short title, system name, Zotero item link or key, pass the supplied text as a single argument to `find "QUERY" --json`. It searches the current reading collection and its descendants. Use the key in `matches` when exactly one paper matches. For multiple matches, show titles, first authors and years and ask the user to choose. If none match, report that and leave the library alone. If several source PDFs qualify, show their names and use the chosen `--attachment KEY`.
 
-Read the JSON and the exit status. A run can submit some papers or save some notes before reporting a problem. Use `status` to verify the affected records. Report submissions to Gmail, notes saved under their Zotero parents, and outstanding work separately. Count repeat exports as already saved. When a user asks where their handwriting is, the device step is **Share → Google Drive → Upload**.
+Read the JSON and the exit status. A run can submit papers or save notes before reporting a problem. Use `status` to verify the affected records. Report Gmail submissions, saved notes, and outstanding work. Each paper keeps one current Kindle Notes attachment. Identical exports reuse it, and superseded copies go to Zotero Trash after verification. When a user asks where their handwriting is, the device step is **Share → Google Drive → Upload**.
 
 - `submitted` means Gmail accepted the email. Only report device receipt on user confirmation or a corresponding `confirmed_received` record.
 - `uncertain` can mean the email was sent. Check the device with the user before authorizing a retry. A confirmed Amazon rejection requires the matching Gmail message ID.
+- A `retired` receipt records an older export. Report the current archived notes when the user asks which copy to open.
 - `manual_upload` gives the prepared PDF path. On Compose, it is inside the container. To give the user a local file for upload, use the deployment's `docker compose cp` to copy it to a private host directory with the same filename.
 - Automatic receipt requires a unique match to a submitted or confirmed delivery and a live Zotero parent, even if the paper moved out of the reading collection. Leave unrelated and ambiguous PDFs in Drive. Use `match DRIVE_FILE_ID ITEM_KEY` only when the user requests that specific pairing. Add `--version VERSION` to select an older cached revision.
 

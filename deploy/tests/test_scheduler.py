@@ -27,7 +27,7 @@ if not Path("attempted").exists():
 Path("active").touch()
 while not Path("release").exists():
     time.sleep(0.01)
-print(json.dumps({"actions": ["submitted X to Gmail", "archived Y under X as Z"]}))
+print(json.dumps({"actions": ["submitted X to Gmail", "archived Y under X as Z", "retired older notes: OLD"]}))
 """)
             fake_cli.chmod(0o755)
             command = "import runpy,sys; runpy.run_path(sys.argv[1])['main'](0.05)"
@@ -56,4 +56,4 @@ print(json.dumps({"actions": ["submitted X to Gmail", "archived Y under X as Z"]
             self.assertEqual([e["event"] for e in events], ["sync_started", "sync_finished"] * 2)
             first, second = events[1], events[3]
             self.assertEqual((first["exit_code"], first["problems"]), (1, 1))
-            self.assertEqual((second["exit_code"], second["submitted"], second["archived"]), (0, 1, 1))
+            self.assertEqual((second["exit_code"], second["submitted"], second["archived"], second["retired"]), (0, 1, 1, 1))

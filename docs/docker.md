@@ -106,3 +106,5 @@ dc up -d --no-build --force-recreate sync
 ```
 
 Retain the rollback tag in the private Compose environment until you next upgrade. Keep the current data volume when reverting the application. A database backup made before a Gmail submission lacks its delivery record and can cause a duplicate send.
+
+If you roll back to a version that kept every notes PDF, preview `sync --direction receive --dry-run` with that image first. Older versions can re-import exports that the current version retired.

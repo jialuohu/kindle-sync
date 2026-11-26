@@ -161,6 +161,10 @@ func (c *Client) ValidateParent(ctx context.Context, key string) error {
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&row); err != nil {
 		return errors.New("invalid Zotero parent response")
 	}
+	return row.validateParent(key)
+}
+
+func (row record) validateParent(key string) error {
 	if row.Key != key || row.Data.Key != key || row.Data.Parent != "" {
 		return errors.New("Zotero parent identity mismatch")
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -56,8 +57,10 @@ if sys.argv[1] == 'fetch':
  print(json.dumps({'status':'downloaded','attachment_key':opt('--attachment-key'),'md5':hashlib.md5(data).hexdigest()}))
 elif sys.argv[1] == 'attach':
  f = pathlib.Path(opt('--file'))
- assert f.read_bytes().endswith(b'handwritten')
- print(json.dumps({'status':'created','backend':'webdav','attachment_key':'NOTES001','parent_key':opt('--parent-key'),'basename':f.name,'md5':hashlib.md5(f.read_bytes()).hexdigest()}))
+ data = f.read_bytes()
+ assert data.endswith(b'handwritten')
+ child = 'NOTES002' if b'revised' in data else 'NOTES001'
+ print(json.dumps({'status':'created','backend':'webdav','attachment_key':child,'parent_key':opt('--parent-key'),'basename':f.name,'md5':hashlib.md5(data).hexdigest()}))
 `))
 	t.Setenv("KINDLE_SYNC_CONFIG", configPath)
 	t.Setenv("CODEX_SECRETS_DIR", dir)
@@ -71,14 +74,37 @@ elif sys.argv[1] == 'attach':
 	var havePaper bool
 	var sends int
 	var exportName string
-	returned := []byte("%PDF-1.4\nhandwritten")
+	originalNotes := []byte("%PDF-1.4\nhandwritten")
+	revisedNotes := []byte("%PDF-1.4\nrevised handwritten")
+	returned := originalNotes
+	exportVersion := 1
+	exportDate := time.Now().Add(time.Minute).UTC()
 	export := func() map[string]any {
-		return map[string]any{"id": "export", "name": exportName, "parents": []string{"folder"}, "createdTime": time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano), "mimeType": "application/pdf", "size": strconv.Itoa(len(returned)), "md5Checksum": fmt.Sprintf("%x", md5.Sum(returned)), "version": "1"}
+		return map[string]any{
+			"id": "export", "name": exportName, "parents": []string{"folder"},
+			"createdTime":  exportDate.Format(time.RFC3339Nano),
+			"modifiedTime": exportDate.Add(time.Duration(exportVersion) * time.Minute).Format(time.RFC3339Nano),
+			"mimeType":     "application/pdf", "size": strconv.Itoa(len(returned)),
+			"md5Checksum": fmt.Sprintf("%x", md5.Sum(returned)), "version": strconv.Itoa(exportVersion),
+		}
 	}
+	notesRecord := func(key string, pdf []byte, deleted bool) map[string]any {
+		data := map[string]any{
+			"key": key, "itemType": "attachment", "linkMode": "imported_file",
+			"contentType": "application/pdf", "parentItem": "PAPER001",
+			"filename": fmt.Sprintf("Kindle Notes - %x.pdf", sha256.Sum256(pdf)), "md5": fmt.Sprintf("%x", md5.Sum(pdf)),
+		}
+		if deleted {
+			data["deleted"] = 1
+		}
+		return map[string]any{"key": key, "data": data}
+	}
+	var retireWrites int
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 	http.DefaultTransport = roundTripper(func(r *http.Request) (*http.Response, error) {
 		var body []byte
+		header := http.Header{"Content-Type": {"application/json"}}
 		path := r.URL.Path
 		switch {
 		case strings.HasSuffix(path, "/READ0001/items/top"):
@@ -90,6 +116,23 @@ elif sys.argv[1] == 'attach':
 			body = []byte("[]")
 		case path == "/users/123/items/PAPER001":
 			body = []byte(`{"key":"PAPER001","data":{"key":"PAPER001","itemType":"journalArticle"}}`)
+		case path == "/users/123/items" && r.Method == http.MethodGet:
+			header.Set("Last-Modified-Version", strconv.Itoa(42+retireWrites))
+			body = encode([]any{
+				map[string]any{"key": "PAPER001", "data": map[string]string{"key": "PAPER001", "itemType": "journalArticle"}},
+				notesRecord("NOTES001", originalNotes, retireWrites > 0),
+				notesRecord("NOTES002", revisedNotes, false),
+			})
+		case path == "/users/123/items" && r.Method == http.MethodPost:
+			var changes []struct {
+				Key     string
+				Deleted int
+			}
+			if err := json.NewDecoder(r.Body).Decode(&changes); err != nil || len(changes) != 1 || changes[0].Key != "NOTES001" || changes[0].Deleted != 1 || r.Header.Get("If-Unmodified-Since-Version") != "42" {
+				return nil, fmt.Errorf("unexpected attachment update: %+v", changes)
+			}
+			retireWrites++
+			body = []byte(`{"successful":{"0":{"key":"NOTES001"}},"failed":{}}`)
 		case strings.HasSuffix(path, "/PAPER001/children"):
 			body = []byte(`[{"key":"FILE0001","data":{"itemType":"attachment","parentItem":"PAPER001","linkMode":"imported_url","contentType":"application/pdf","filename":"original.pdf"}}]`)
 		case strings.HasSuffix(path, "/messages/send"):
@@ -111,7 +154,7 @@ elif sys.argv[1] == 'attach':
 		default:
 			return nil, fmt.Errorf("unexpected test request %s", path)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Header: header, Body: io.NopCloser(bytes.NewReader(body)), Request: r}, nil
 	})
 	invoke := func(args ...string) []byte {
 		t.Helper()
@@ -189,6 +232,23 @@ elif sys.argv[1] == 'attach':
 	_, receipts := status()
 	if sends != 2 || len(receipts) != 1 || receipts[0].State != "archived" || receipts[0].Child != "NOTES001" || receipts[0].Parent != "PAPER001" {
 		t.Fatal(receipts, sends)
+	}
+	exportVersion, returned = 2, revisedNotes
+	invoke("sync", "--direction", "receive", "--dry-run")
+	if retireWrites != 0 {
+		t.Fatal("preview retired an attachment")
+	}
+	invoke("sync", "--direction", "receive")
+	invoke("sync", "--direction", "receive")
+	_, receipts = status()
+	var active []string
+	for _, receipt := range receipts {
+		if receipt.State == "archived" {
+			active = append(active, receipt.Child)
+		}
+	}
+	if len(active) != 1 || active[0] != "NOTES002" || retireWrites != 1 || sends != 2 {
+		t.Fatalf("active notes %v, trash writes %d, sends %d", active, retireWrites, sends)
 	}
 }
 

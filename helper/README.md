@@ -2,7 +2,7 @@
 
 The Go CLI calls this Python helper to fetch a paper’s stored PDF and archive the annotated copy in the same personal Zotero library. The helper adapts an existing Zotero attachment tool and uses PyZotero, PyMuPDF, and the WebDAV client from `zotero-mcp-server`.
 
-Each archived PDF becomes a child attachment named `Kindle Notes - <SHA-256>.pdf`. The hash identifies the contents, so a repeat export of the same bytes reuses the attachment. After writing to Zotero and Koofr, the helper reads the attachment record back and checks the downloaded PDF. The optional desktop plugin recognizes these attachments. [Plugin guide](../zotero-plugin/README.md)
+The helper saves a child attachment named `Kindle Notes - <SHA-256>.pdf`, reads its Zotero record back, and verifies the PDF downloaded from Koofr. After verification, the Go CLI moves superseded Kindle Notes attachments to Zotero Trash. The optional desktop plugin opens the current attachment. [Plugin guide](../zotero-plugin/README.md)
 
 ## Development
 

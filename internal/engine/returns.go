@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"time"
 
 	"kindle-sync/internal/model"
 )
@@ -67,9 +66,22 @@ func (r *round) inbound(ctx context.Context) error {
 			}
 		}
 	}
+	targetParent := r.receipts[target].Parent
+	if r.options.MatchParent != "" {
+		targetParent = r.options.MatchParent
+	}
+	if err := r.recoverArchiveTimes(files, targetParent); err != nil {
+		return err
+	}
 	work := make([]revision, 0)
 	for k, rec := range r.receipts {
 		if r.options.ReturnFile != "" && k != target {
+			continue
+		}
+		if rec.State == "retired" {
+			if r.options.ReturnFile != "" {
+				r.report.Actions = append(r.report.Actions, "newer notes retained: "+rec.ID)
+			}
 			continue
 		}
 		if rec.State == "archived" {
@@ -107,22 +119,23 @@ func (r *round) inbound(ctx context.Context) error {
 		}
 		work = append(work, k)
 	}
+	latest := r.latestArchives()
 	sort.Slice(work, func(i, j int) bool {
-		a, b := r.receipts[work[i]].DriveFile, r.receipts[work[j]].DriveFile
-		at, bt := exportTime(a), exportTime(b)
-		if !at.Equal(bt) {
-			return at.Before(bt)
+		a, b := r.receipts[work[i]], r.receipts[work[j]]
+		if a.Parent != b.Parent {
+			return a.Parent < b.Parent
 		}
-		if a.ID != b.ID {
-			return a.ID < b.ID
+		// Apply replacements to known Drive files before ranking new IDs.
+		// Their modification timestamp may have moved in either direction.
+		headA, headB := latest[a.Parent][a.ID], latest[b.Parent][b.ID]
+		updateA := headA.ID != "" && newerVersion(a.Version, headA.Version)
+		updateB := headB.ID != "" && newerVersion(b.Version, headB.Version)
+		if updateA != updateB {
+			return updateA
 		}
-		av, _ := strconv.ParseUint(a.Version, 10, 64)
-		bv, _ := strconv.ParseUint(b.Version, 10, 64)
-		if av != bv {
-			return av < bv
-		}
-		return a.Version < b.Version
+		return laterExport(a.DriveFile, b.DriveFile)
 	})
+	failed := make(map[string]bool)
 	for _, k := range work {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -130,6 +143,9 @@ func (r *round) inbound(ctx context.Context) error {
 		x := r.receipts[k]
 		if r.options.MatchParent != "" {
 			x.Parent = r.options.MatchParent
+		}
+		if failed[x.Parent] {
+			continue
 		}
 		ok, err := r.canArchiveToParent(ctx, x.Parent)
 		if err != nil {
@@ -142,24 +158,51 @@ func (r *round) inbound(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		if r.options.DryRun {
-			r.report.Actions = append(r.report.Actions, "would reconcile export for "+x.Parent+": "+x.ID)
+		notes := latest[x.Parent]
+		if notes == nil { // A manual match may assign a previously unknown parent.
+			notes = make(noteFiles)
+			latest[x.Parent] = notes
+		}
+		older, comparable := notes.compare(x)
+		keep, _ := notes.winner()
+		if !comparable {
+			r.report.Problems = append(r.report.Problems, "cannot order export against undated notes for "+x.Parent)
 			continue
 		}
-		if err := r.receive(ctx, x, current[k]); err != nil {
+		if older {
+			if x.Child != "" {
+				continue // The retention pass can retire this unfinished upload.
+			}
+			if x.Hash == "" {
+				x.State, x.Error = "retired", ""
+				if err := r.saveReceipt(x); err != nil {
+					return err
+				}
+				notes.add(x)
+				r.report.Actions = append(r.report.Actions, "newer notes retained: "+x.ID)
+				continue
+			}
+			// The remote write may have succeeded before its child key was
+			// saved. Recover it by content before retiring it.
+		}
+		if r.options.DryRun {
+			r.report.Actions = append(r.report.Actions, "would reconcile export for "+x.Parent+": "+x.ID)
+			// Model the successful archive for the rest of this preview.
+			x.State = "archived"
+			notes.add(x)
+			continue
+		}
+		if err := r.receive(ctx, x, keep, current[k]); err != nil {
 			return err
 		}
+		saved := r.receipts[k]
+		if saved.State != "archived" {
+			failed[x.Parent] = true
+		} else {
+			notes.add(saved)
+		}
 	}
-	return nil
-}
-
-// The Zotero plugin opens the most recently added attachment. Archive a batch oldest first.
-func exportTime(f model.DriveFile) time.Time {
-	if modified, err := time.Parse(time.RFC3339Nano, f.ModifiedTime); err == nil {
-		return modified
-	}
-	created, _ := time.Parse(time.RFC3339Nano, f.CreatedTime)
-	return created
+	return r.retireOlderNotes(ctx, latest, targetParent)
 }
 
 // Drive's monotonically increasing version is a decimal integer encoded as a string.
@@ -205,7 +248,7 @@ func (r *round) matchTarget(current map[revision]bool) (revision, error) {
 	return key, nil
 }
 
-func (r *round) receive(ctx context.Context, x model.Receipt, current bool) error {
+func (r *round) receive(ctx context.Context, x, keep model.Receipt, current bool) error {
 	path, err := r.materialize(ctx, &x, current)
 	if err != nil {
 		return r.receiptProblem(x, err)
@@ -215,13 +258,11 @@ func (r *round) receive(ctx context.Context, x model.Receipt, current bool) erro
 	if err := r.saveReceipt(x); err != nil {
 		return err
 	}
-	for _, old := range r.receipts {
-		if old.Parent == x.Parent && old.Hash == x.Hash && old.Child != "" {
-			x.Child = old.Child
-			if old.State == "archived" {
-				return r.archived(x, path, "already archived: "+x.ID)
-			}
-		}
+	// Retired children may still be in Zotero trash. Only the current
+	// verified attachment can satisfy a later export of the same bytes.
+	if keep.Child != "" && keep.Hash == x.Hash && (x.Child == "" || x.Child == keep.Child) {
+		x.Child = keep.Child
+		return r.archived(x, path, "already archived: "+x.ID)
 	}
 	child, err := r.library.Archive(ctx, x.Parent, path, x.Child)
 	if child != "" {
@@ -247,13 +288,20 @@ func (r *round) archived(x model.Receipt, path, action string) error {
 	if err := r.saveReceipt(x); err != nil {
 		return err
 	}
+	if err := removeCachedPDF(path); err != nil {
+		return err
+	}
+	r.report.Actions = append(r.report.Actions, action)
+	return nil
+}
+
+func removeCachedPDF(path string) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := os.Remove(filepath.Dir(path)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	r.report.Actions = append(r.report.Actions, action)
 	return nil
 }
 

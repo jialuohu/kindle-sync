@@ -269,6 +269,28 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
         self.assertEqual(result["md5"], hashlib.md5(self.pdf.read_bytes()).hexdigest())
         self.assertNotIn(str(self.root), json.dumps(result))
 
+    def test_reexport_of_retired_content_creates_an_active_attachment(self) -> None:
+        contents = self.pdf.read_bytes()
+        name = f"Kindle Notes - {hashlib.sha256(contents).hexdigest()}.pdf"
+        pdf = self.pdf.rename(self.root / name)
+        old = attachment("TRASH001", "PARENT01", name, deleted=1, md5=hashlib.md5(contents).hexdigest())
+        client = FakeClient([old])
+
+        def download(key: str, directory: Path, filename: str) -> Path:
+            self.assertEqual(key, "ATTACH01")
+            output = directory / filename
+            output.write_bytes(contents)
+            return output
+
+        result = MODULE.attach_webdav(
+            parent_key="PARENT01", file_path=pdf, env=webdav_env(), client=client,
+            preflight_fn=self.preflight, parser_fn=self.parser, download_fn=download,
+            upload_fn=lambda key, path, md5, mtime: (md5, mtime),
+        )
+        self.assertEqual((result["status"], result["attachment_key"]), ("created", "ATTACH01"))
+        self.assertEqual(client.item("TRASH001"), old)
+        self.assertEqual(old["data"]["deleted"], 1)
+
     def test_retry_after_partial_upload_reuses_the_same_child_key(self) -> None:
         client = FakeClient()
         attempts: list[str] = []

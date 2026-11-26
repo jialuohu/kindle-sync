@@ -6,7 +6,7 @@ Read papers from Zotero on a Kindle Scribe and save your handwritten notes back 
 
 1. Add a paper to the Zotero collection you watch, or to any of its subcollections. Kindle Sync fetches the PDF from Koofr WebDAV and emails it to your Kindle. Each paper gets its own message.
 2. Write on the PDF. When you're ready to send it back, choose **Share → Google Drive → Upload** on the Scribe.
-3. After the next sync, expand the paper in Zotero and open **Kindle Notes**. If you export again, identical PDF bytes reuse the existing attachment. A changed PDF appears beside the earlier version.
+3. After the next sync, open **Kindle Notes** under the paper in Zotero. Each paper keeps its latest annotated PDF. When a newer export changes the PDF, Kindle Sync verifies the new copy, then moves its previous copy to Zotero Trash. The original paper and your Drive exports stay in place.
 
 You can move a paper out of your reading collection after sending it. Notes still return to the same Zotero item. If you trash or delete the item, or an export doesn't match a paper Kindle Sync sent, the PDF stays in Drive.
 

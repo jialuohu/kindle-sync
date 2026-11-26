@@ -37,8 +37,9 @@ type Zotero interface {
 	// Members returns all regular papers beneath a collection (inclusive).
 	Members(context.Context, string) ([]Paper, error)
 	Sources(context.Context, string) ([]Attachment, error)
-	Download(context.Context, Attachment, string) error              // destination file path
-	Archive(context.Context, string, string, string) (string, error) // parent, file path, previous child key if known; return child key even for partial failures
+	Download(context.Context, Attachment, string) error                        // destination file path
+	Archive(context.Context, string, string, string) (string, error)           // parent, file path, previous child key if known; return child key even for partial failures
+	RetireNotes(ctx context.Context, parent string, keep, stale Receipt) error // verify both identities before moving stale to Zotero trash
 }
 type Google interface {
 	Send(context.Context, string, string) (string, error) // complete file path, attachment filename; Gmail message ID
@@ -61,11 +62,12 @@ type Job struct {
 }
 type Receipt struct {
 	DriveFile
-	Parent string `json:"parent,omitempty"`
-	State  string `json:"state"`
-	Hash   string `json:"sha256,omitempty"`
-	Child  string `json:"child,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Parent         string `json:"parent,omitempty"`
+	State          string `json:"state"`
+	Hash           string `json:"sha256,omitempty"`
+	Child          string `json:"child,omitempty"`
+	Error          string `json:"error,omitempty"`
+	ObservedBefore string `json:"observed_before,omitempty"` // upper bound for an archived export with no Drive timestamp
 }
 type Store interface {
 	Initialized() (bool, error)

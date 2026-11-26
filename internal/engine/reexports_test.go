@@ -53,10 +53,17 @@ func TestRepeatExportAcrossDriveFilesAndRevisions(t *testing.T) {
 	}
 	hashes := map[[2]string]string{}
 	for _, receipt := range receipts {
-		if receipt.Parent != "PAPER001" || receipt.State != "archived" || receipt.Hash == "" {
+		wantState := "retired"
+		if receipt.ID == second.ID && receipt.Version == "2" {
+			wantState = "archived"
+		}
+		if receipt.Parent != "PAPER001" || receipt.State != wantState || receipt.Hash == "" {
 			t.Fatalf("incomplete receipt: %+v", receipt)
 		}
 		hashes[[2]string{receipt.ID, receipt.Version}] = receipt.Hash
+	}
+	if len(f.z.retired) != 1 || f.z.retired[0] != "child-key" {
+		t.Fatalf("older attachment retired %v", f.z.retired)
 	}
 	first := hashes[[2]string{export.ID, "1"}]
 	if first != hashes[[2]string{second.ID, "1"}] || first == hashes[[2]string{second.ID, "2"}] {
@@ -92,12 +99,10 @@ func TestArchiveBatchByDriveModificationTimeAndNumericRevision(t *testing.T) {
 	f.g.bytes[second.ID] = "%PDF-revision ten"
 	f.g.bytes[earlier.ID] = "%PDF-earlier export"
 	r := f.run(t)
-	if len(r.Problems) != 0 || len(f.z.archives) != 4 {
-		t.Fatalf("archives=%+v problems=%v", f.z.archives, r.Problems)
+	if len(r.Problems) != 0 || len(f.z.archives) != 2 || len(f.z.retired) != 1 {
+		t.Fatalf("archives=%+v retired=%v problems=%v", f.z.archives, f.z.retired, r.Problems)
 	}
-	for i, want := range []string{"%PDF-earlier export", "%PDF-revision two", "%PDF-revision ten"} {
-		if got := f.z.archives[i+1].bytes; got != want {
-			t.Fatalf("batch attachment %d: got %q, want %q", i, got, want)
-		}
+	if f.z.archives[1].bytes != "%PDF-revision ten" || f.g.downloads != 2 {
+		t.Fatal("batch must retain the newest numeric revision and skip the earlier export")
 	}
 }
