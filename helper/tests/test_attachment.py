@@ -96,20 +96,13 @@ class FakeClient:
             if child["key"] == item["key"]:
                 self.children_data[index] = item
                 break
-        return FakeResponse()
+        return True
 
     def upload_attachments(
         self, payloads: list[dict], parentid: str | None = None, basedir: Path | None = None
     ) -> dict:
         self.events.append(("cloud-upload", payloads[0]["key"]))
         return {"success": payloads, "failure": [], "unchanged": []}
-
-
-class FakeResponse:
-    status_code = 204
-
-    def raise_for_status(self) -> None:
-        return None
 
 
 class PaperLibraryAttachmentTests(unittest.TestCase):
@@ -686,28 +679,33 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
         self.assertEqual(opened[0], opened[1])
 
     def test_metadata_update_requires_response_and_readback(self) -> None:
-        class NoResponseClient(FakeClient):
-            def update_item(self, item: dict) -> object:
-                super().update_item(item)
-                return object()
+        for sdk_result, cause in (
+            (False, "invalid_metadata_update_response"),
+            (object(), "invalid_metadata_update_response"),
+            (True, "attachment_metadata_not_persisted"),
+        ):
+            with self.subTest(result=sdk_result):
+                class StaleClient(FakeClient):
+                    def update_item(self, item: dict) -> object:
+                        item["data"]["mtime"] = None
+                        super().update_item(item)
+                        return sdk_result
 
-        client = NoResponseClient()
-
-        with self.assertRaises(MODULE.AttachmentMutationError) as raised:
-            MODULE.attach_webdav(
-                parent_key="PARENT01",
-                file_path=self.pdf,
-                env=webdav_env(),
-                client=client,
-                preflight_fn=self.preflight,
-                upload_fn=lambda _key, _file, md5, mtime_ms: (md5, mtime_ms),
-                download_fn=lambda *_args: self.fail("verification must not run"),
-                parser_fn=self.parser,
-            )
-
-        self.assertEqual(raised.exception.code, "zotero_metadata_update_failed")
-        self.assertEqual(raised.exception.attachment_key, "ATTACH01")
-        self.assertEqual(raised.exception.stage, "zotero-metadata")
+                with self.assertRaises(MODULE.AttachmentMutationError) as raised:
+                    MODULE.attach_webdav(
+                        parent_key="PARENT01",
+                        file_path=self.pdf,
+                        env=webdav_env(),
+                        client=StaleClient(),
+                        preflight_fn=self.preflight,
+                        upload_fn=lambda _key, _file, md5, mtime_ms: (md5, mtime_ms),
+                        download_fn=lambda *_args: self.fail("verification must not run"),
+                        parser_fn=self.parser,
+                    )
+                self.assertEqual(raised.exception.code, "zotero_metadata_update_failed")
+                self.assertEqual(raised.exception.attachment_key, "ATTACH01")
+                self.assertEqual(raised.exception.stage, "zotero-metadata")
+                self.assertEqual(raised.exception.__cause__.code, cause)
 
     def test_bounded_zip_extraction_rejects_oversize_and_unsafe_members(self) -> None:
         oversize = self.root / "oversize.zip"

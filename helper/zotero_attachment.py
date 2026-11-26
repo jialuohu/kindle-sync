@@ -777,6 +777,17 @@ def _attachment_metadata_matches(
     return bool(matches)
 
 
+def _update_attachment_item(client: Any, record: dict) -> None:
+    result = client.update_item(record)
+    # PyZotero checks the HTTP response in its write decorator and returns True.
+    if result is True:
+        return
+    raise_for_status = getattr(result, "raise_for_status", None)
+    if not callable(raise_for_status):
+        raise IntakeError("invalid_metadata_update_response")
+    raise_for_status()
+
+
 def _mutation_error(
     code: str,
     *,
@@ -967,11 +978,7 @@ def attach_webdav(
                         "mtime": stored_mtime,
                     }
                 )
-                response = client.update_item(record)
-                raise_for_status = getattr(response, "raise_for_status", None)
-                if not callable(raise_for_status):
-                    raise IntakeError("invalid_metadata_update_response")
-                raise_for_status()
+                _update_attachment_item(client, record)
                 persisted = client.item(attachment_key)
                 if not isinstance(persisted, Mapping) or not _attachment_metadata_matches(
                     persisted,
@@ -1149,11 +1156,7 @@ def attach_zotero_cloud(
                         "mtime": stored_mtime,
                     }
                 )
-                response = client.update_item(record)
-                raise_for_status = getattr(response, "raise_for_status", None)
-                if not callable(raise_for_status):
-                    raise IntakeError("invalid_metadata_update_response")
-                raise_for_status()
+                _update_attachment_item(client, record)
                 persisted = client.item(attachment_key)
                 if not isinstance(persisted, Mapping) or not _attachment_metadata_matches(
                     persisted,
