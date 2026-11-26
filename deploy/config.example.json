@@ -1,0 +1,12 @@
+{
+  "library_id": "12345678",
+  "collection_key": "ABCD2345",
+  "sender_email": "",
+  "kindle_email": "",
+  "drive_folder_id": "",
+  "state_dir": "/var/lib/kindle-sync",
+  "webdav_url": "https://app.koofr.net/dav/Koofr/zotero/",
+  "helper_path": "/opt/kindle-sync/helper/zotero_attachment.py",
+  "helper_python": "/opt/kindle-sync/venv/bin/python",
+  "email_limit_bytes": 25000000
+}

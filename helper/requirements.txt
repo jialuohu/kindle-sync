@@ -1,0 +1,5 @@
+# Direct runtime versions used to validate the vendored attachment helper.
+PyMuPDF==1.28.0
+pyzotero==1.13.2
+requests==2.34.2
+zotero-mcp-server==0.6.0

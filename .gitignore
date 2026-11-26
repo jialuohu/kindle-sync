@@ -1,0 +1,17 @@
+/dist/
+/bin/
+/config.json
+/.env*
+/secrets/
+/state/
+__pycache__/
+*.pyc
+/venv/
+/.venv/
+google-client.json
+*-token.json
+zotero-api-key
+koofr-username
+koofr-password
+*.sqlite
+*.sqlite-*

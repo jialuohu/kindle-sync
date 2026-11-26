@@ -1,0 +1,20 @@
+[Unit]
+Description=Deliver Zotero papers and archive Kindle annotations
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=kindle-sync
+Group=kindle-sync
+UMask=0077
+StateDirectory=kindle-sync
+StateDirectoryMode=0700
+Environment=HOME=/var/lib/kindle-sync
+Environment=CODEX_SECRETS_DIR=/etc/kindle-sync/secrets
+ExecStart=/opt/kindle-sync/bin/kindle-sync sync --json
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/kindle-sync/secrets
+ProtectHome=true
