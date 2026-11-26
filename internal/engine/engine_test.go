@@ -20,6 +20,9 @@ type fakeLibrary struct {
 	collections map[string][]model.Paper
 	sources     map[string][]model.Attachment
 	pdfs        map[string]string
+	pdfYear     string
+	doiYear     string
+	doiLookups  []string
 	archives    []savedPDF
 	partial     bool
 	retired     []string
@@ -39,11 +42,15 @@ func (z *fakeLibrary) Members(_ context.Context, k string) ([]model.Paper, error
 func (z *fakeLibrary) Sources(_ context.Context, k string) ([]model.Attachment, error) {
 	return z.sources[k], nil
 }
-func (z *fakeLibrary) Download(_ context.Context, a model.Attachment, p string) error {
+func (z *fakeLibrary) PublicationYear(_ context.Context, doi string) string {
+	z.doiLookups = append(z.doiLookups, doi)
+	return z.doiYear
+}
+func (z *fakeLibrary) Download(_ context.Context, a model.Attachment, p string) (string, error) {
 	if data, ok := z.pdfs[a.Key]; ok {
-		return os.WriteFile(p, []byte(data), 0600)
+		return z.pdfYear, os.WriteFile(p, []byte(data), 0600)
 	}
-	return errors.New("not synced yet")
+	return "", errors.New("not synced yet")
 }
 func (z *fakeLibrary) Archive(_ context.Context, parent, p, key string) (string, error) {
 	b, err := os.ReadFile(p)
@@ -530,9 +537,9 @@ func (l faultLibrary) Members(ctx context.Context, key string) ([]model.Paper, e
 	}
 	return l.fakeLibrary.Members(ctx, key)
 }
-func (l faultLibrary) Download(ctx context.Context, a model.Attachment, p string) error {
+func (l faultLibrary) Download(ctx context.Context, a model.Attachment, p string) (string, error) {
 	if l.fetchError != nil {
-		return l.fetchError
+		return "", l.fetchError
 	}
 	return l.fakeLibrary.Download(ctx, a, p)
 }

@@ -29,7 +29,7 @@ func TestFetchViaWebDAV(t *testing.T) {
 		t.Skip("set KINDLE_SYNC_TEST_PYTHON to exercise the packaged Python runtime")
 	}
 	root := t.TempDir()
-	pdf, err := exec.Command(python, "-I", "-c", "import sys,fitz; d=fitz.open(); d.new_page().insert_text((20,20),'Fixture'); sys.stdout.buffer.write(d.tobytes())").Output()
+	pdf, err := exec.Command(python, "-I", "-c", "import sys,fitz; d=fitz.open(); d.new_page().insert_text((20,20),'Copyright 2023 IEEE'); sys.stdout.buffer.write(d.tobytes())").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,15 +82,15 @@ func TestFetchViaWebDAV(t *testing.T) {
 	}
 	dest := filepath.Join(root, "prepared.pdf")
 	a := model.Attachment{Key: "ATTACH01", Name: "source.pdf"}
-	if err = c.Download(context.Background(), a, dest); err != nil {
-		t.Fatal(err)
+	if year, err := c.Download(context.Background(), a, dest); err != nil || year != "2023" {
+		t.Fatalf("expected the printed year from the downloaded PDF, got %q, %v", year, err)
 	}
 	got, err := os.ReadFile(dest)
 	if err != nil || !bytes.Equal(got, pdf) {
 		t.Fatalf("incorrect fetched bytes: %v", err)
 	}
 	a.MD5 = strings.Repeat("0", 32)
-	err = c.Download(context.Background(), a, dest)
+	_, err = c.Download(context.Background(), a, dest)
 	if err == nil || !strings.Contains(err.Error(), "checksum_mismatch") {
 		t.Fatalf("wrong digest accepted: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestArchiveViaWebDAV(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(root, "fresh.pdf")
-	if err = fresh.Download(context.Background(), model.Attachment{Key: child, Name: name}, dest); err != nil {
+	if _, err = fresh.Download(context.Background(), model.Attachment{Key: child, Name: name}, dest); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(dest)

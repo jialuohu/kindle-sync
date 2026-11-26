@@ -200,6 +200,38 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
                 parser_fn=lambda _path: (_ for _ in ()).throw(ValueError("bad pdf")),
             )
 
+    def test_year_from_first_page_publication_marks(self) -> None:
+        for text, expected in [
+            ("CONF '23, May 4–8, 2023, Example City\n111-2-3333-4444-5/23/$12.00 ©2023 IEEE", "2023"),
+            ("Publication date: March 2021.", "2021"),
+            ("Copyright © 1999 Association for Computing Machinery.", "1999"),
+            ("Date of publication: May 8, 2022\n© 2021 IEEE", None),
+            ("CONF '23, May 4, 2022, Example City", None),
+            ("Conference acronym ’XX\n©2018 ACM", None),
+            ("©2099 IEEE\nLibrary intake: 2024", None),
+            ("Software copyright © 2023 IEEE\n© 2022 Example Software\nDownloaded 2025", None),
+            ("Prior work [2024] used 10.1234/2021\nReferences\n© 2019 IEEE", None),
+        ]:
+            with self.subTest(text=text):
+                self.assertEqual(MODULE._printed_publication_year(text), expected)
+
+    def test_fetch_receipt_includes_only_identified_publication_year(self) -> None:
+        checksum = hashlib.md5(self.pdf.read_bytes()).hexdigest()
+        for first_page, expected in [("© 2022 IEEE", "2022"), ("References to 2015 and 2022", None)]:
+            with self.subTest(first_page=first_page):
+                output = self.root / "fetched.pdf"
+                source = self.root / "source.pdf"
+                source.write_bytes(self.pdf.read_bytes())
+                with mock.patch.object(MODULE, "_download_webdav_attachment_bounded", return_value=source) as download, \
+                     mock.patch.object(MODULE, "_parse_pdf", return_value=(12, first_page)) as parse:
+                    result = MODULE.fetch_webdav("ATTACH01", source.name, checksum, output, env=webdav_env())
+                self.assertEqual(result.get("publication_year"), expected)
+                self.assertEqual("publication_year" in result, expected is not None)
+                self.assertEqual(output.read_bytes(), self.pdf.read_bytes())
+                self.assertEqual(result["md5"], checksum)
+                download.assert_called_once()
+                parse.assert_called_once_with(source)
+
     def test_validate_pdf_enforces_bounds_and_rejects_symlinks(self) -> None:
         small = self.root / "small.pdf"
         small.write_bytes(b"%PDF-1.7\n%%EOF\n")

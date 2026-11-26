@@ -18,6 +18,7 @@ import tempfile
 import unicodedata
 import zipfile
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import quote, urlparse
@@ -100,7 +101,45 @@ def detect_storage(env: Mapping[str, str] | None = None) -> dict[str, Any]:
     }
 
 
-def _parse_pdf(path: Path) -> int:
+_MONTH = r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?"
+_PRINT_DATE = rf"{_MONTH}\s+(?:\d{{1,2}}(?:\s*[-–—]\s*\d{{1,2}})?,?\s+)?(?P<year>(?:19|20)\d{{2}})\b"
+_PUBLISHER_NOTICE = re.compile(
+    r"(?:[0-9][0-9X./$\s-]{3,80}\s+)?(?:Copyright\s*©?|©)\s*(?P<year>(?:19|20)\d{2})\s+"
+    r"(?:by\s+)?(?:IEEE|ACM|(?:the\s+)?Association for Computing Machinery|USENIX Association)"
+    r"\.?(?:\s+All rights reserved\.?)?", re.I,
+)
+_PUBLICATION_DATE = re.compile(rf"(?:Publication date|Date of publication)\s*:?\s+{_PRINT_DATE}\.?", re.I)
+_EVENT_DATE = re.compile(rf"[A-Z][A-Z-]{{1,20}}\s*['’]?(?P<edition>\d{{2}}),\s*(?i:{_PRINT_DATE})(?:,\s+[^\n]+)?")
+_TEMPLATE = re.compile(r"Conference acronym\s*['’]XX|Woodstock\s*['’]18|10\.1145/nnnnnnn\.nnnnnnn", re.I)
+
+
+def _printed_publication_year(text: str) -> str | None:
+    """Read first-page publisher notices, publication dates, and dated conference footers."""
+    text = unicodedata.normalize("NFKC", text)
+    if _TEMPLATE.search(text):
+        return None
+    years = set()
+    for line in text.splitlines():
+        line = line.strip()
+        if re.fullmatch(r"(?:references|bibliography)[:.]?", line, re.I):
+            break
+        match = _PUBLISHER_NOTICE.fullmatch(line) or _PUBLICATION_DATE.fullmatch(line)
+        if match:
+            years.add(match["year"])
+        else:
+            event = _EVENT_DATE.fullmatch(line)
+            if event:
+                if event["edition"] != event["year"][-2:]:
+                    return None
+                years.add(event["year"])
+    if len(years) == 1:
+        year = years.pop()
+        if int(year) <= date.today().year + 1:
+            return year
+    return None
+
+
+def _parse_pdf(path: Path) -> tuple[int, str]:
     try:
         import fitz  # type: ignore
     except ImportError as exc:
@@ -111,8 +150,7 @@ def _parse_pdf(path: Path) -> int:
             pages = int(document.page_count)
             if pages < 1:
                 raise IntakeError("unparseable_pdf")
-            document.load_page(0).get_text("text")
-            return pages
+            return pages, document.load_page(0).get_text("text")
     except IntakeError:
         raise
     except Exception as exc:
@@ -131,6 +169,7 @@ def validate_pdf(
     file_path: str | Path,
     *,
     parser_fn: Callable[[Path], int] | None = None,
+    include_publication_year: bool = False,
     min_bytes: int = DEFAULT_MIN_PDF_BYTES,
     max_bytes: int = DEFAULT_MAX_PDF_BYTES,
 ) -> dict[str, int | str]:
@@ -151,9 +190,12 @@ def validate_pdf(
     if not prefix.startswith(b"%PDF-"):
         raise IntakeError("invalid_pdf_magic")
 
-    parser = _parse_pdf if parser_fn is None else parser_fn
+    first_page = ""
     try:
-        pages = int(parser(path))
+        if parser_fn is None:
+            pages, first_page = _parse_pdf(path)
+        else:
+            pages = int(parser_fn(path))
     except IntakeError:
         raise
     except Exception as exc:
@@ -175,12 +217,21 @@ def validate_pdf(
         after.st_mtime_ns,
     ):
         raise IntakeError("pdf_changed_during_validation")
-    return {
+    facts = {
         "size": before.st_size,
         "md5": md5,
         "mtime": int(before.st_mtime * 1000),
         "pages": pages,
     }
+    if include_publication_year and first_page:
+        try:
+            year = _printed_publication_year(first_page)
+        except (TypeError, ValueError, RuntimeError):
+            # Publication metadata is optional even when the PDF validates.
+            year = None
+        if year:
+            facts["publication_year"] = year
+    return facts
 
 
 def _validate_key(key: str) -> str:
@@ -701,11 +752,14 @@ def fetch_webdav(key: str, filename: str, md5: str | None, output: Path, *, env:
         pdf = _download_webdav_attachment_bounded(
             key, directory, filename, env=env, max_bytes=200_000_000, source_archive=True
         )
-        facts = validate_pdf(pdf, min_bytes=1)
+        facts = validate_pdf(pdf, min_bytes=1, include_publication_year=True)
         if facts["md5"] != expected:
             raise IntakeError("webdav_checksum_mismatch")
         os.replace(pdf, output)
-    return {"status": "downloaded", "attachment_key": key, "md5": expected}
+    result = {"status": "downloaded", "attachment_key": key, "md5": expected}
+    if "publication_year" in facts:
+        result["publication_year"] = facts["publication_year"]
+    return result
 
 
 def _verify_download(

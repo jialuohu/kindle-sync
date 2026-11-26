@@ -155,7 +155,7 @@ func (c *Client) verifyNotes(ctx context.Context, row record, r *model.Receipt) 
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "notes.pdf")
-	if err := c.Download(ctx, model.Attachment{Key: r.Child, Name: d.Filename, MD5: d.MD5}, path); err != nil {
+	if _, err := c.Download(ctx, model.Attachment{Key: r.Child, Name: d.Filename, MD5: d.MD5}, path); err != nil {
 		return err
 	}
 	f, err := os.Open(path)

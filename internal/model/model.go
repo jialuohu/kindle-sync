@@ -16,6 +16,8 @@ type Paper struct {
 	Title       string `json:"title"`
 	FirstAuthor string `json:"first_author,omitempty"`
 	Year        string `json:"year,omitempty"`
+	DOI         string `json:"doi,omitempty"`
+	AddedYear   string `json:"added_year,omitempty"` // Used only for naming if the publication year is unknown.
 	ShortTitle  string `json:"short_title,omitempty"`
 	Artifact    string `json:"artifact,omitempty"` // Name explicitly introduced in the abstract.
 }
@@ -37,7 +39,8 @@ type Zotero interface {
 	// Members returns all regular papers beneath a collection (inclusive).
 	Members(context.Context, string) ([]Paper, error)
 	Sources(context.Context, string) ([]Attachment, error)
-	Download(context.Context, Attachment, string) error                        // destination file path
+	PublicationYear(context.Context, string) string                            // best-effort lookup by DOI
+	Download(context.Context, Attachment, string) (string, error)              // destination file path; optional first-page publication year
 	Archive(context.Context, string, string, string) (string, error)           // parent, file path, previous child key if known; return child key even for partial failures
 	RetireNotes(ctx context.Context, parent string, keep, stale Receipt) error // verify both identities before moving stale to Zotero trash
 }
@@ -51,6 +54,7 @@ type Job struct {
 	State            string       `json:"state"`
 	Token            string       `json:"token,omitempty"`
 	OutboundName     string       `json:"outbound_name,omitempty"`
+	ArtifactOverride string       `json:"artifact_override,omitempty"` // Explicit label retained while waiting for the first PDF.
 	NamedAt          string       `json:"named_at,omitempty"`
 	Source           string       `json:"source,omitempty"` // attachment key
 	SourceHash       string       `json:"source_hash,omitempty"`

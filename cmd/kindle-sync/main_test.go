@@ -54,7 +54,7 @@ def opt(k): return sys.argv[sys.argv.index(k)+1]
 if sys.argv[1] == 'fetch':
  data = b'%PDF-1.4\nfixture\n%%EOF'
  pathlib.Path(opt('--output')).write_bytes(data)
- print(json.dumps({'status':'downloaded','attachment_key':opt('--attachment-key'),'md5':hashlib.md5(data).hexdigest()}))
+ print(json.dumps({'status':'downloaded','attachment_key':opt('--attachment-key'),'md5':hashlib.md5(data).hexdigest(),'publication_year':'2026'}))
 elif sys.argv[1] == 'attach':
  f = pathlib.Path(opt('--file'))
  data = f.read_bytes()
@@ -110,7 +110,7 @@ elif sys.argv[1] == 'attach':
 		case strings.HasSuffix(path, "/READ0001/items/top"):
 			body = []byte("[]")
 			if havePaper {
-				body = []byte(`[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"Indexing library records","creators":[{"creatorType":"author","lastName":"Reed","firstName":"A."}],"date":"2026"}}]`)
+				body = []byte(`[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"Indexing library records","creators":[{"creatorType":"author","lastName":"Reed","firstName":"A."}],"dateAdded":"2024-05-03T16:20:00Z"}}]`)
 			}
 		case strings.HasSuffix(path, "/READ0001/collections"):
 			body = []byte("[]")
@@ -170,8 +170,8 @@ elif sys.argv[1] == 'attach':
 	}
 	invoke("sync")
 	havePaper = true
-	if got := string(invoke("sync", "--dry-run", "--item", "PAPER001", "--artifact", "Quill")); !strings.Contains(got, "reed26-quill.pdf") {
-		t.Fatal("preview omitted the requested filename:", got)
+	if got := string(invoke("sync", "--dry-run", "--item", "PAPER001", "--artifact", "Quill")); !strings.Contains(got, "reed24-quill.pdf") {
+		t.Fatal("metadata preview omitted the provisional filename:", got)
 	}
 	invoke("sync", "--item", "PAPER001", "--artifact", "Quill")
 	invoke("sync")

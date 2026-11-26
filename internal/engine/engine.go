@@ -140,6 +140,7 @@ func (r *round) outbound(ctx context.Context) error {
 					return fmt.Errorf("retry uses the original filename %s", j.OutboundName)
 				}
 				j.OutboundName = name
+				j.ArtifactOverride = r.options.Artifact
 			}
 			if r.options.Attachment != "" {
 				j.Source = r.options.Attachment
@@ -276,21 +277,18 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 			return r.problem(j, "needs_source", errors.New("choose one of the candidate PDFs"))
 		}
 	}
-	name := j.OutboundName
-	if name == "" {
-		if j.Token != "" {
-			name = legacyFilename(j.Token, j.Title)
-		} else {
-			name, err = r.allocateName(j.Paper, r.options.ArtifactNames[j.Key])
-			if err != nil {
-				return err
-			}
-		}
-	}
 	if r.options.DryRun {
+		name, provisional, err := r.deliveryName(ctx, &j, "")
+		if err != nil {
+			return err
+		}
 		j.OutboundName = name
 		r.jobs[j.Key] = j // Reserve the preview name for the remaining items in this round.
-		r.report.Actions = append(r.report.Actions, fmt.Sprintf("would prepare %s from attachment %s as %s", j.Key, source.Key, j.OutboundName))
+		action := fmt.Sprintf("would prepare %s from attachment %s as %s", j.Key, source.Key, name)
+		if provisional {
+			action += " (provisional year; the PDF will be checked on send)"
+		}
+		r.report.Actions = append(r.report.Actions, action)
 		return nil
 	}
 	dir, err := tempDir(r.options.Spool)
@@ -299,7 +297,8 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "paper.pdf")
-	if err := r.library.Download(ctx, source, path); err != nil {
+	pdfYear, err := r.library.Download(ctx, source, path)
+	if err != nil {
 		if errors.Is(err, model.ErrTooLarge) {
 			return r.problem(j, "too_large", err)
 		}
@@ -309,8 +308,13 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	if err != nil {
 		return r.problem(j, "waiting_pdf", err)
 	}
+	name, _, err := r.deliveryName(ctx, &j, pdfYear)
+	if err != nil {
+		return err
+	}
 	j.Source, j.SourceHash, j.Error, j.Candidates = source.Key, hash, "", nil
 	j.OutboundName = name
+	j.ArtifactOverride = ""
 	if j.Token == "" {
 		// A rejected or interrupted attempt may be retried much later. A
 		// same-name PDF created before this attempt cannot be its export.

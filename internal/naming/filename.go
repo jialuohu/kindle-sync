@@ -49,6 +49,8 @@ func Filename(p model.Paper, artifactOverride string) (string, error) {
 	year := "nd"
 	if fourDigitYear.MatchString(p.Year) {
 		year = p.Year[2:]
+	} else if fourDigitYear.MatchString(p.AddedYear) {
+		year = p.AddedYear[2:]
 	}
 	label := slug(artifactOverride, 120)
 	if artifactOverride != "" {

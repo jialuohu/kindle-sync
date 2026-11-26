@@ -57,6 +57,12 @@ Gmail grants permission to send and to verify the sender’s email address. Driv
 3. Open the paper in your Kindle library, mark a page, and tap **Share → Google Drive → Upload**. In Drive, open the folder the Scribe created and copy its ID from the URL into `drive_folder_id`. Keep the exported filename so Kindle Sync can identify the paper. Other PDFs can share this folder. Drive export requires a Scribe released in 2025 or later. [Scribe export instructions](https://digprjsurvey.amazon.com/csad/help/node/TP8wuaQilIlwlITVTL)
 4. Copy the exported PDF’s file ID from its Drive link and run `ks receive DRIVE_FILE_ID`. Sync Zotero and open the new **Kindle Notes** attachment under the original paper. Check your mark. Receiving the same PDF again should leave a single notes attachment.
 
+## Kindle filenames
+
+The filename combines the first author's surname, the last two digits of the year, and the artifact name, as in `reed26-quill.pdf`. Kindle Sync first reads Zotero's bibliographic date, including an explicit issued date or a recognized arXiv identifier. If the year is still missing, it can look up the item's DOI in Crossref and check the PDF's first page for a publication year. Only the DOI is sent to Crossref.
+
+When no publication year can be established, Kindle Sync uses the year the item was added to Zotero for the filename. If that is also missing, it uses `nd` (no date). A preview reads metadata only, so the PDF can refine a provisional filename at send time. Zotero's Date field is untouched. Already sent papers keep their recorded filenames so their notes still match.
+
 ## Which exports return to Zotero?
 
 Kindle Sync checks Drive metadata before downloading. The filename must identify one paper submitted to Gmail or confirmed as received. For example, a delivery named `reed26-quill.pdf` also matches `reed26-quill - Kindle.pdf`. Older deliveries can match by their delivery token. An unrelated PDF with the same qualifying name can match too. Give personal documents different names when sharing the folder.

@@ -63,13 +63,21 @@ type record struct {
 		ParsedDate string `json:"parsedDate"`
 	} `json:"meta"`
 	Data struct {
-		Key        string          `json:"key"`
-		Deleted    json.RawMessage `json:"deleted"`
-		Title      string          `json:"title"`
-		ShortTitle string          `json:"shortTitle"`
-		Date       string          `json:"date"`
-		Abstract   string          `json:"abstractNote"`
-		Creators   []struct {
+		Key             string          `json:"key"`
+		Deleted         json.RawMessage `json:"deleted"`
+		Title           string          `json:"title"`
+		ShortTitle      string          `json:"shortTitle"`
+		Date            string          `json:"date"`
+		DateAdded       string          `json:"dateAdded"`
+		DOI             string          `json:"DOI"`
+		URL             string          `json:"url"`
+		Extra           string          `json:"extra"`
+		Repository      string          `json:"repository"`
+		Archive         string          `json:"archive"`
+		ArchiveID       string          `json:"archiveID"`
+		ArchiveLocation string          `json:"archiveLocation"`
+		Abstract        string          `json:"abstractNote"`
+		Creators        []struct {
 			Type     string `json:"creatorType"`
 			LastName string `json:"lastName"`
 			Name     string `json:"name"` // Zotero's single-field (organization) creator.
@@ -82,8 +90,6 @@ type record struct {
 		Parent      string `json:"parentItem"`
 	} `json:"data"`
 }
-
-var publicationYear = regexp.MustCompile(`\b[1-9][0-9]{3}\b`)
 
 func (r record) deleted() (bool, error) {
 	switch string(r.Data.Deleted) {
@@ -110,13 +116,9 @@ func (r record) paper() model.Paper {
 			break
 		}
 	}
-	p.Year = publicationYear.FindString(r.Meta.ParsedDate)
-	if p.Year == "" {
-		// Older data may only expose a display date. An ambiguous date range
-		// supplies no single publication year. Never use dateAdded or dateModified.
-		if years := publicationYear.FindAllString(r.Data.Date, 2); len(years) == 1 {
-			p.Year = years[0]
-		}
+	p.Year, p.DOI = r.publicationMetadata()
+	if added, err := time.Parse(time.RFC3339, r.Data.DateAdded); err == nil && added.Year() > 0 {
+		p.AddedYear = added.Format("2006")
 	}
 	return p
 }

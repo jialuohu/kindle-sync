@@ -15,13 +15,14 @@ import (
 )
 
 type receipt struct {
-	Status   string `json:"status"`
-	Error    string `json:"error"`
-	Backend  string `json:"backend"`
-	Parent   string `json:"parent_key"`
-	Child    string `json:"attachment_key"`
-	Basename string `json:"basename"`
-	MD5      string `json:"md5"`
+	Status          string `json:"status"`
+	Error           string `json:"error"`
+	Backend         string `json:"backend"`
+	Parent          string `json:"parent_key"`
+	Child           string `json:"attachment_key"`
+	Basename        string `json:"basename"`
+	MD5             string `json:"md5"`
+	PublicationYear string `json:"publication_year"`
 }
 
 var errorCode = regexp.MustCompile("^[a-z][a-z0-9_]{0,79}$")
@@ -62,32 +63,32 @@ func (c *Client) helper(ctx context.Context, args ...string) (receipt, error) {
 	return result, nil
 }
 
-func (c *Client) Download(ctx context.Context, a model.Attachment, dst string) error {
+func (c *Client) Download(ctx context.Context, a model.Attachment, dst string) (string, error) {
 	if !validKey.MatchString(a.Key) || a.Name == "" || a.Name == "." || a.Name == ".." || filepath.Base(a.Name) != a.Name || strings.Contains(a.Name, "\\") {
-		return errors.New("invalid Zotero attachment")
+		return "", errors.New("invalid Zotero attachment")
 	}
 	path, err := filepath.Abs(dst)
 	if err != nil {
-		return err
+		return "", err
 	}
 	args := []string{"fetch", "--attachment-key", a.Key, "--filename", a.Name, "--output", path}
 	if a.MD5 != "" {
 		if !hashPattern.MatchString(a.MD5) {
-			return errors.New("invalid Zotero attachment checksum")
+			return "", errors.New("invalid Zotero attachment checksum")
 		}
 		args = append(args, "--md5", a.MD5)
 	}
 	r, err := c.helper(ctx, args...)
 	if err != nil {
 		if r.Error == "source_pdf_too_large" || r.Error == "webdav_archive_too_large" {
-			return fmt.Errorf("%w: %s", model.ErrTooLarge, r.Error)
+			return "", fmt.Errorf("%w: %s", model.ErrTooLarge, r.Error)
 		}
-		return err
+		return "", err
 	}
 	if r.Status != "downloaded" || r.Child != a.Key || !hashPattern.MatchString(r.MD5) || (a.MD5 != "" && !strings.EqualFold(r.MD5, a.MD5)) {
-		return errors.New("attachment helper returned inconsistent download receipt")
+		return "", errors.New("attachment helper returned inconsistent download receipt")
 	}
-	return nil
+	return r.PublicationYear, nil
 }
 
 func (c *Client) Archive(ctx context.Context, parent, path, child string) (string, error) {

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"cmp"
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +11,25 @@ import (
 	"kindle-sync/internal/model"
 	"kindle-sync/internal/naming"
 )
+
+// Keep the delivery name stable once bytes have been prepared. A name saved by
+// an older release without its original override must also remain usable.
+func (r *round) deliveryName(ctx context.Context, j *model.Job, pdfYear string) (name string, provisional bool, err error) {
+	if j.OutboundName != "" && (j.SourceHash != "" || j.ArtifactOverride == "") {
+		return j.OutboundName, false, nil
+	}
+	if j.Token != "" {
+		return legacyFilename(j.Token, j.Title), false, nil
+	}
+	if j.Year == "" && j.DOI != "" {
+		j.Year = r.library.PublicationYear(ctx, j.DOI)
+	}
+	if j.Year == "" {
+		j.Year = pdfYear
+	}
+	name, err = r.allocateName(j.Paper, cmp.Or(j.ArtifactOverride, r.options.ArtifactNames[j.Key]))
+	return name, j.Year == "", err
+}
 
 func foldedName(name string) string {
 	return norm.NFC.String(strings.ToLower(name))

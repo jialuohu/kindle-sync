@@ -2,6 +2,15 @@
 
 Read papers from Zotero on a Kindle Scribe and save your handwritten notes back to the same Zotero item.
 
+## Use with an agent
+
+Open this repository in Codex. Ask in plain language or type `$` to select a skill.
+
+- **[$kindle-sync-deploy](.agents/skills/kindle-sync-deploy/SKILL.md)** installs or upgrades the scheduled service. Try “Deploy Kindle Sync on this Mac.”
+- **[$kindle-sync](.agents/skills/kindle-sync/SKILL.md)** sends papers, receives notes, and checks the queue. Try “Preview my Kindle sync,” “Send the unsent papers in ReadLater,” or “Bring back my Kindle notes.”
+
+The first scan records papers already in the collection. Ask the agent to send those papers when you are ready. Papers added later go out automatically every five minutes while the service is running.
+
 ## Everyday use
 
 1. Add a paper to the Zotero collection you watch, or to any of its subcollections. Kindle Sync fetches the PDF from Koofr WebDAV and emails it to your Kindle. Each paper gets its own message.
@@ -10,12 +19,10 @@ Read papers from Zotero on a Kindle Scribe and save your handwritten notes back 
 
 You can move a paper out of your reading collection after sending it. Notes still return to the same Zotero item. If you trash or delete the item, or an export doesn't match a paper Kindle Sync sent, the PDF stays in Drive.
 
-Kindle filenames combine the first author's surname, the last two digits of the year, and the paper's system or artifact name. For example, a 2026 paper by Reed introducing *Quill* becomes `reed26-quill.pdf`.
+Kindle filenames use the first author's surname, a two-digit year, and the paper's artifact name. A 2026 paper by Reed introducing *Quill* becomes `reed26-quill.pdf`. If publication metadata and the PDF give no year, the filename uses the year the item was added to Zotero. [Filename rules](docs/setup.md#kindle-filenames)
 
-## Get started
+## Setup guides
 
-Open this checkout in Codex and ask **“Deploy Kindle Sync”**. The repository's `$kindle-sync-deploy` skill sets up Docker Compose and verifies two scheduled rounds. The [Docker guide](docs/docker.md) also covers moving an existing queue. For a native Linux service, use the [systemd guide](docs/setup.md).
-
-Ask **“Sync my Kindle”** for a two-way sync, **“Send Quill to my Kindle”** for one paper, or **“Bring my Kindle notes back”** for notes only. The `$kindle-sync` skill uses the same queue as the five-minute scheduler. On the first sync, papers already in the collection become the baseline. Ask for one by name to send it.
-
-To open the newest annotated PDF when you double-click a paper, install the optional [Kindle Notes plugin for Zotero](zotero-plugin/README.md).
+- [Docker Compose](docs/docker.md) for installation, migration, and upgrades.
+- [Native Linux service](docs/setup.md) for a systemd installation.
+- [Kindle Notes plugin for Zotero](zotero-plugin/README.md) to open the latest annotated PDF when you double-click a paper.
