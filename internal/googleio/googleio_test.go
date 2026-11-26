@@ -86,12 +86,29 @@ func TestSendUploadsOneRealAttachment(t *testing.T) {
 			return
 		}
 		pieces := multipart.NewReader(msg.Body, params["boundary"])
+		note, err := pieces.NextPart()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		noteType, _, err := mime.ParseMediaType(note.Header.Get("Content-Type"))
+		if err != nil || noteType != "text/plain" || note.Header.Get("Content-Disposition") != "" {
+			t.Error("first part must be a plain-text message body", note.Header)
+		}
+		noteBody, err := io.ReadAll(note)
+		if err != nil || strings.TrimSpace(string(noteBody)) == "" {
+			t.Error("empty or unreadable message body")
+		}
 		att, err := pieces.NextPart()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if att.FileName() != filename || att.Header.Get("Content-Transfer-Encoding") != "base64" {
+		disposition, dp, dErr := mime.ParseMediaType(att.Header.Get("Content-Disposition"))
+		mediaType, mp, mErr := mime.ParseMediaType(att.Header.Get("Content-Type"))
+		if dErr != nil || disposition != "attachment" || dp["filename"] != filename ||
+			mErr != nil || mediaType != "application/pdf" || mp["name"] != filename ||
+			att.Header.Get("Content-Transfer-Encoding") != "base64" {
 			t.Error("invalid attachment", att.Header)
 		}
 		body, err := io.ReadAll(base64.NewDecoder(base64.StdEncoding, att))

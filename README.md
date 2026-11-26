@@ -64,6 +64,7 @@ Use `ks status --json` to inspect queued items, PDF candidates, delivery states 
 | Include existing papers | Preview `ks sync --backfill COLLECTION_KEY --dry-run`, then repeat without `--dry-run` to queue previously seen papers in the reading tree. |
 | Original PDF still uploading | Let Zotero finish syncing the source to Koofr. A later run retries. |
 | Uncertain send | Check the Kindle library. Use `ks resolve ITEM_KEY received` to confirm receipt or `ks resolve ITEM_KEY retry` to allow a retry. |
+| Amazon rejected the email | Verify the message ID in status. Run `ks resolve ITEM_KEY rejected GMAIL_ID` to queue that delivery again. |
 | Unknown parent for an export | Run `ks match DRIVE_FILE_ID ITEM_KEY`. If several versions are pending, use `ks match --version VERSION DRIVE_FILE_ID ITEM_KEY`. |
 | PDF exceeds the email limit | Upload the PDF at `manual_file` with its generated filename. [Send to Kindle](https://www.amazon.com/sendtokindle) |
 

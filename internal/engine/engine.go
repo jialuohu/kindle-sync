@@ -268,11 +268,14 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	return r.saveJob(j)
 }
 
-// Resolve records an operator's device check after Gmail's response was lost.
-// A retry remains queued until the next sync, which uses the original delivery code.
-func Resolve(store model.Store, key, decision string) (model.Job, error) {
-	if decision != "received" && decision != "retry" {
-		return model.Job{}, errors.New("decision must be received or retry")
+// Resolve records a device check or a confirmed Amazon rejection. An explicit
+// retry waits for the next sync and keeps the original delivery token.
+func Resolve(store model.Store, key, decision, gmailID string) (model.Job, error) {
+	if decision != "received" && decision != "retry" && decision != "rejected" {
+		return model.Job{}, errors.New("decision must be received, retry, or rejected")
+	}
+	if (decision == "rejected") != (gmailID != "") {
+		return model.Job{}, errors.New("supply the Gmail message ID only when confirming a rejection")
 	}
 	jobs, err := store.Jobs()
 	if err != nil {
@@ -282,13 +285,22 @@ func Resolve(store model.Store, key, decision string) (model.Job, error) {
 		if job.Key != key {
 			continue
 		}
-		if job.State != "uncertain" && job.State != "sending" {
-			return job, errors.New("only an uncertain or interrupted submission can be resolved")
-		}
-		if decision == "retry" {
+		if decision == "rejected" {
+			if job.State != "submitted" || job.GmailID != gmailID {
+				return job, errors.New("rejection must match the current submitted Gmail message ID")
+			}
+			job.RejectedGmailIDs = append(job.RejectedGmailIDs, job.GmailID)
+			job.GmailID = ""
 			job.State = "queued"
 		} else {
-			job.State = "confirmed_received"
+			if job.State != "uncertain" && job.State != "sending" {
+				return job, errors.New("only an uncertain or interrupted submission can be resolved as received or retried")
+			}
+			if decision == "received" {
+				job.State = "confirmed_received"
+			} else {
+				job.State = "queued"
+			}
 		}
 		job.Error = ""
 		return job, store.PutJob(job)

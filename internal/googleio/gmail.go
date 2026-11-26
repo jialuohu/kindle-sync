@@ -91,6 +91,15 @@ func writeMessage(out io.Writer, sender, kindle, filename string, pdf io.Reader)
 	if err != nil {
 		return errors.New("cannot write message headers")
 	}
+	note, err := body.CreatePart(textproto.MIMEHeader{
+		"Content-Type": {"text/plain; charset=us-ascii"},
+	})
+	if err != nil {
+		return errors.New("cannot create message body")
+	}
+	if _, err := io.WriteString(note, "The PDF is attached.\r\n"); err != nil {
+		return errors.New("cannot write message body")
+	}
 	h := textproto.MIMEHeader{}
 	h.Set("Content-Type", mime.FormatMediaType("application/pdf", map[string]string{"name": filename}))
 	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))

@@ -40,14 +40,15 @@ type Google interface {
 }
 type Job struct {
 	Paper
-	State      string       `json:"state"`
-	Token      string       `json:"token,omitempty"`
-	Source     string       `json:"source,omitempty"` // attachment key
-	SourceHash string       `json:"source_hash,omitempty"`
-	Candidates []Attachment `json:"candidates,omitempty"`
-	GmailID    string       `json:"gmail_id,omitempty"`
-	ManualFile string       `json:"manual_file,omitempty"`
-	Error      string       `json:"error,omitempty"`
+	State            string       `json:"state"`
+	Token            string       `json:"token,omitempty"`
+	Source           string       `json:"source,omitempty"` // attachment key
+	SourceHash       string       `json:"source_hash,omitempty"`
+	Candidates       []Attachment `json:"candidates,omitempty"`
+	GmailID          string       `json:"gmail_id,omitempty"`
+	RejectedGmailIDs []string     `json:"rejected_gmail_ids,omitempty"`
+	ManualFile       string       `json:"manual_file,omitempty"`
+	Error            string       `json:"error,omitempty"`
 }
 type Receipt struct {
 	DriveFile

@@ -92,7 +92,7 @@ elif sys.argv[1] == 'attach':
 			body = []byte(`[{"key":"FILE0001","data":{"itemType":"attachment","parentItem":"PAPER001","linkMode":"imported_url","contentType":"application/pdf","filename":"original.pdf"}}]`)
 		case strings.HasSuffix(path, "/messages/send"):
 			sends++
-			body = []byte(`{"id":"gmail-id"}`)
+			body = encode(map[string]string{"id": fmt.Sprintf("gmail-%d", sends)})
 		case strings.HasSuffix(path, "/files/folder"):
 			body = []byte(`{"mimeType":"application/vnd.google-apps.folder","trashed":false}`)
 		case strings.HasSuffix(path, "/files"):
@@ -137,6 +137,28 @@ elif sys.argv[1] == 'attach':
 	if len(jobs) != 1 || jobs[0].State != "submitted" || sends != 1 {
 		t.Fatal(jobs, sends)
 	}
+	token := jobs[0].Token
+	rejectInvalid := func(decision ...string) {
+		t.Helper()
+		if err := run(context.Background(), append([]string{"resolve", "PAPER001"}, decision...), io.Discard); err == nil {
+			t.Fatalf("accepted invalid resolution %q", decision)
+		}
+	}
+	rejectInvalid("retry")
+	rejectInvalid("rejected")
+	rejectInvalid("rejected", "wrong-id")
+	invoke("resolve", "PAPER001", "rejected", "gmail-1")
+	rejectInvalid("rejected", "gmail-1")
+	jobs, _ = status()
+	if sends != 1 || jobs[0].State != "queued" || jobs[0].GmailID != "" || len(jobs[0].RejectedGmailIDs) != 1 || jobs[0].RejectedGmailIDs[0] != "gmail-1" {
+		t.Fatalf("rejection was not recorded: %+v, sends=%d", jobs, sends)
+	}
+	invoke("sync")
+	rejectInvalid("rejected", "gmail-1")
+	jobs, _ = status()
+	if sends != 2 || jobs[0].State != "submitted" || jobs[0].GmailID != "gmail-2" || jobs[0].Token != token || len(jobs[0].RejectedGmailIDs) != 1 || jobs[0].RejectedGmailIDs[0] != "gmail-1" {
+		t.Fatalf("retry did not preserve delivery history: %+v, sends=%d", jobs, sends)
+	}
 	// A mistyped first folder must not strand the original delivery token.
 	c.Folder = "missing"
 	write(configPath, encode(c))
@@ -150,7 +172,7 @@ elif sys.argv[1] == 'attach':
 	invoke("sync")
 	invoke("sync")
 	_, receipts := status()
-	if sends != 1 || len(receipts) != 1 || receipts[0].State != "archived" || receipts[0].Child != "NOTES001" || receipts[0].Parent != "PAPER001" {
+	if sends != 2 || len(receipts) != 1 || receipts[0].State != "archived" || receipts[0].Child != "NOTES001" || receipts[0].Parent != "PAPER001" {
 		t.Fatal(receipts, sends)
 	}
 }

@@ -278,18 +278,18 @@ func TestResolveChecksStateAndPreservesToken(t *testing.T) {
 	f.g.sendError = errors.New("lost response")
 	f.run(t)
 	token := f.jobs(t)["unknown"].Token
-	if _, err := engine.Resolve(f.s, "unknown", "skip"); err == nil {
+	if _, err := engine.Resolve(f.s, "unknown", "skip", ""); err == nil {
 		t.Fatal("accepted invalid decision")
 	}
-	got, err := engine.Resolve(f.s, "unknown", "retry")
+	got, err := engine.Resolve(f.s, "unknown", "retry", "")
 	if err != nil || got.Token != token || got.State != "queued" {
 		t.Fatalf("%+v, %v", got, err)
 	}
-	if _, err := engine.Resolve(f.s, "unknown", "received"); err == nil {
+	if _, err := engine.Resolve(f.s, "unknown", "received", ""); err == nil {
 		t.Fatal("resolved unrelated job state")
 	}
 	f.run(t)
-	confirmed, err := engine.Resolve(f.s, "unknown", "received")
+	confirmed, err := engine.Resolve(f.s, "unknown", "received", "")
 	if err != nil || confirmed.State != "confirmed_received" {
 		t.Fatal(confirmed, err)
 	}

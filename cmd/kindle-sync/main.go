@@ -44,6 +44,7 @@ const usage = `kindle-sync [--config PATH] COMMAND [--json]
   sync --backfill COLLECTION        Include historical members of this collection
   sync --item ITEM --attachment KEY Choose a source PDF explicitly
   resolve ITEM received|retry       Resolve an uncertain send after checking the device
+  resolve ITEM rejected GMAIL_ID    Queue a retry after Amazon rejected that submission
   status                            Show the local queue and Drive receipts
   match DRIVE_FILE_ID ITEM          Archive a returned PDF under the specified paper
 
@@ -209,8 +210,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return enc.Encode(map[string]string{"authorized": args[1]})
 	}
 	if args[0] == "resolve" {
-		if len(args) != 3 || !zotKey.MatchString(args[1]) || (args[2] != "received" && args[2] != "retry") {
-			return errors.New("resolve requires ITEM and received or retry")
+		if len(args) < 3 || len(args) > 4 || !zotKey.MatchString(args[1]) || (args[2] == "rejected") != (len(args) == 4) {
+			return errors.New("use resolve ITEM received|retry or resolve ITEM rejected GMAIL_ID")
+		}
+		var gmailID string
+		if len(args) == 4 {
+			gmailID = args[3]
 		}
 		id, err := c.identity()
 		if err != nil {
@@ -221,7 +226,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		defer s.Close()
-		job, err := engine.Resolve(s, args[1], args[2])
+		job, err := engine.Resolve(s, args[1], args[2], gmailID)
 		if err != nil {
 			return err
 		}
