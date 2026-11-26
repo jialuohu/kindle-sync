@@ -42,10 +42,12 @@ type config struct {
 
 const usage = `kindle-sync [--config PATH] COMMAND [--json]
   auth gmail|drive                  Authorize the server through a loopback browser callback
-  sync [--dry-run]                  Discover papers, submit mail and archive receipts
-  sync --backfill COLLECTION        Include historical members of this collection
+  find QUERY                        Find watched papers by title, artifact, key, or Zotero link
+  sync [--direction send|receive|both] [--dry-run]
+                                    Send papers, receive notes, or do both (default)
+  sync --backfill COLLECTION        Send pending and historical papers in this collection only
   sync --item ITEM [--attachment KEY] [--artifact NAME]
-                                    Select one paper, its PDF, or its artifact name
+                                    Send one paper; optionally choose its PDF or artifact name
   resolve ITEM received|retry       Resolve an uncertain send after checking the device
   resolve ITEM rejected GMAIL_ID    Queue a retry after Amazon rejected that submission
   status                            Show the local queue and Drive receipts
@@ -131,6 +133,7 @@ func parseOptions(args []string, c config) (model.Options, error) {
 	f.SetOutput(io.Discard)
 	if args[0] == "sync" {
 		f.BoolVar(&o.DryRun, "dry-run", false, "")
+		f.StringVar(&o.Direction, "direction", "", "")
 		f.StringVar(&o.Item, "item", "", "")
 		f.StringVar(&o.Attachment, "attachment", "", "")
 		f.StringVar(&o.Artifact, "artifact", "", "")
@@ -141,6 +144,15 @@ func parseOptions(args []string, c config) (model.Options, error) {
 	}
 	if err := f.Parse(args[1:]); err != nil {
 		return o, err
+	}
+	var emptyOption string
+	f.Visit(func(option *flag.Flag) {
+		if option.Value.String() == "" {
+			emptyOption = option.Name
+		}
+	})
+	if emptyOption != "" {
+		return o, fmt.Errorf("--%s needs a nonempty value", emptyOption)
 	}
 	if args[0] == "match" {
 		if f.NArg() != 2 || f.Arg(0) == "" || !zotKey.MatchString(f.Arg(1)) {
@@ -160,6 +172,18 @@ func parseOptions(args []string, c config) (model.Options, error) {
 	}
 	if o.Item != "" && o.Backfill != "" {
 		return o, errors.New("choose --item or --backfill for this run")
+	}
+	switch o.SyncDirection() {
+	case "send":
+	case "both", "receive":
+		if o.Item != "" || o.Backfill != "" {
+			return o, errors.New("--item and --backfill can only be used with the send direction")
+		}
+	default:
+		return o, errors.New("--direction must be send, receive, or both")
+	}
+	if o.SyncDirection() == "receive" && c.Folder == "" {
+		return o, errors.New("set drive_folder_id before processing an export")
 	}
 	for _, k := range []string{o.Item, o.Attachment, o.Backfill} {
 		if k != "" && !zotKey.MatchString(k) {
@@ -206,7 +230,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	switch args[0] {
-	case "auth", "sync", "status", "match", "receive", "resolve":
+	case "auth", "find", "sync", "status", "match", "receive", "resolve":
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -221,6 +245,20 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	gc := googleio.Config{SecretsDir: secretDir, Sender: c.Sender, KindleAddress: c.Kindle, FolderID: c.Folder}
 	enc := json.NewEncoder(out)
 	enc.SetEscapeHTML(false)
+	if args[0] == "find" {
+		if len(args) != 2 {
+			return errors.New("find requires one title, artifact, item key, or personal Zotero link")
+		}
+		apiKey, err := readSecret(secretDir, "zotero-api-key")
+		if err != nil {
+			return err
+		}
+		matches, err := zotero.Find(ctx, c.LibraryID, apiKey, c.Collection, args[1], c.ArtifactNames)
+		if err != nil {
+			return err
+		}
+		return enc.Encode(map[string][]model.Paper{"matches": matches})
+	}
 	if args[0] == "auth" {
 		if len(args) != 2 || (args[1] != "gmail" && args[1] != "drive") {
 			return errors.New("auth requires gmail or drive")
@@ -266,9 +304,6 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer s.Close()
-	if o.ReturnFile != "" && c.Folder == "" {
-		return errors.New("set drive_folder_id before processing an export")
-	}
 	if err := s.BindFolder(c.Folder, false); err != nil {
 		return err
 	}

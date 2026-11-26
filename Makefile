@@ -1,7 +1,7 @@
 GOARCH ?= $(shell go env GOARCH)
 PACKAGE := kindle-sync-linux-$(GOARCH)
 BUILD := dist/$(PACKAGE)
-RELEASE_SOURCES := README.md docs/setup.md \
+RELEASE_SOURCES := README.md docs/setup.md docs/docker.md \
 	helper/zotero_attachment.py helper/requirements.lock helper/README.md \
 	deploy/config.example.json deploy/kindle-sync.service deploy/kindle-sync.timer deploy/install.sh \
 	zotero-plugin/README.md
@@ -11,6 +11,7 @@ PLUGIN_FILES := manifest.json bootstrap.js
 test:
 	go test ./...
 	python3 -B -m unittest discover -s helper/tests -p 'test_*.py'
+	python3 -B -m unittest discover -s deploy/tests -p 'test_*.py'
 
 plugin: dist/kindle-notes.xpi
 

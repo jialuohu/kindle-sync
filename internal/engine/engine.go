@@ -45,13 +45,17 @@ func Run(ctx context.Context, store model.Store, library model.Zotero, google mo
 	for _, rec := range receipts {
 		r.receipts[revision{rec.ID, rec.Version}] = rec
 	}
-	if options.ReturnFile == "" {
+	direction := options.SyncDirection()
+	if direction != "receive" {
 		if err := r.outbound(ctx); err != nil {
 			return r.report, err
 		}
 	}
+	if direction == "send" {
+		return r.report, nil
+	}
 	if options.SkipReturns {
-		if options.ReturnFile != "" {
+		if direction == "receive" {
 			return r.report, errors.New("bind a Drive folder before processing an export")
 		}
 		r.report.Actions = append(r.report.Actions, "Drive folder not yet bound; scanning for returns is paused")
@@ -88,8 +92,17 @@ func (r *round) outbound(ctx context.Context) error {
 	}
 	members, err := r.library.Members(ctx, r.options.Root)
 	if err != nil {
+		if r.options.Item != "" || r.options.Backfill != "" {
+			return fmt.Errorf("cannot verify the requested papers in the reading collection: %w", err)
+		}
 		r.report.Problems = append(r.report.Problems, "reading Zotero collection: "+err.Error())
-	} else if !initial {
+		return nil // Continue Drive intake, but never send from a stale membership snapshot.
+	}
+	selected, err := r.selection(ctx, members)
+	if err != nil {
+		return err
+	}
+	if !initial {
 		if !r.options.DryRun {
 			if err := r.store.Seed(members); err != nil {
 				return err
@@ -99,51 +112,13 @@ func (r *round) outbound(ctx context.Context) error {
 			r.jobs[p.Key] = model.Job{Paper: p, State: "baseline"}
 		}
 		r.report.Actions = append(r.report.Actions, fmt.Sprintf("baseline: %d papers", len(members)))
-	} else {
-		for _, p := range members {
-			j, ok := r.jobs[p.Key]
-			if !ok {
-				j = model.Job{Paper: p, State: "queued"}
-			} else {
-				switch j.State {
-				case "queued", "waiting_pdf", "needs_source", "baseline":
-				default:
-					continue
-				}
-				if j.Token != "" || j.SourceHash != "" || j.Paper == p {
-					continue
-				}
-				// Includes jobs stored before author and date were collected.
-				j.Paper = p
-			}
-			if err := r.saveJob(j); err != nil {
-				return err
-			}
-		}
 	}
-	if r.options.Backfill != "" {
-		if err != nil {
-			return fmt.Errorf("cannot backfill without a complete reading queue: %w", err)
+	for _, p := range members {
+		if !selected[p.Key] {
+			continue
 		}
-		eligible := make(map[string]model.Paper, len(members))
-		for _, paper := range members {
-			eligible[paper.Key] = paper
-		}
-		members, err := r.library.Members(ctx, r.options.Backfill)
-		if err != nil {
+		if err := r.discover(p); err != nil {
 			return err
-		}
-		for _, member := range members {
-			p, inScope := eligible[member.Key]
-			if !inScope {
-				continue
-			}
-			j, ok := r.jobs[p.Key]
-			if !ok || j.State == "baseline" {
-				if err := r.saveJob(model.Job{Paper: p, State: "queued"}); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	if r.options.Item != "" {
@@ -173,13 +148,26 @@ func (r *round) outbound(ctx context.Context) error {
 			if err := r.saveJob(j); err != nil {
 				return err
 			}
+		case "submitted", "confirmed_received", "manual_upload":
+			if r.options.Attachment != "" || r.options.Artifact != "" {
+				return fmt.Errorf("cannot override attachment of paper in state %s", j.State)
+			}
+			r.report.Actions = append(r.report.Actions, fmt.Sprintf("%s already in state %s", j.Key, j.State))
+			return nil
+		case "sending":
+			// The delivery loop below records the interruption without submitting again.
 		default:
 			return fmt.Errorf("cannot override attachment of paper in state %s", j.State)
 		}
 	}
 	keys := make([]string, 0, len(r.jobs))
-	for key := range r.jobs {
-		keys = append(keys, key)
+	for key, job := range r.jobs {
+		// A full queue scan may recover an interrupted Gmail attempt after the
+		// paper was removed. Only currently selected papers can call Send.
+		recoverInterrupted := job.State == "sending" && r.options.Item == "" && r.options.Backfill == ""
+		if selected[key] || recoverInterrupted {
+			keys = append(keys, key)
+		}
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
@@ -196,15 +184,63 @@ func (r *round) outbound(ctx context.Context) error {
 			}
 			r.report.Problems = append(r.report.Problems, j.Key+": "+j.Error)
 		case "queued", "needs_source", "waiting_pdf":
-			if r.options.Item != "" && key != r.options.Item {
-				continue
-			}
 			if err := r.deliver(ctx, j); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// Every send is limited to the current watched tree, including delayed retries.
+func (r *round) selection(ctx context.Context, members []model.Paper) (map[string]bool, error) {
+	watched := make(map[string]bool, len(members))
+	for _, p := range members {
+		watched[p.Key] = true
+	}
+	if key := r.options.Item; key != "" {
+		if watched[key] {
+			return map[string]bool{key: true}, nil
+		}
+		return nil, errors.New("paper is not in the configured reading collection")
+	}
+	if r.options.Backfill == "" || r.options.Backfill == r.options.Root {
+		return watched, nil
+	}
+	collection, err := r.library.Members(ctx, r.options.Backfill)
+	if err != nil {
+		return nil, err
+	}
+	selected := make(map[string]bool)
+	for _, p := range collection {
+		if watched[p.Key] {
+			selected[p.Key] = true
+		}
+	}
+	return selected, nil
+}
+
+func (r *round) discover(p model.Paper) error {
+	j, exists := r.jobs[p.Key]
+	if !exists {
+		return r.saveJob(model.Job{Paper: p, State: "queued"})
+	}
+	switch j.State {
+	case "queued", "waiting_pdf", "needs_source", "baseline":
+	default:
+		return nil
+	}
+	before, state := j.Paper, j.State
+	if j.Token == "" && j.SourceHash == "" {
+		j.Paper = p
+	}
+	if j.State == "baseline" && r.options.Backfill != "" {
+		j.State = "queued"
+	}
+	if j.Paper == before && j.State == state {
+		return nil
+	}
+	return r.saveJob(j)
 }
 
 func (r *round) problem(j model.Job, state string, err error) error {

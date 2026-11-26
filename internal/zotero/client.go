@@ -36,15 +36,19 @@ var managedName = regexp.MustCompile("(?i)^Kindle Notes - [0-9a-f]{64}\\.pdf$")
 var hashPattern = regexp.MustCompile("^[[:xdigit:]]{32}$")
 
 func New(c Config) (*Client, error) {
-	if id, err := strconv.ParseUint(c.LibraryID, 10, 64); err != nil || id == 0 || c.APIKey == "" {
-		return nil, errors.New("personal Zotero library ID and API key required")
-	}
 	u, err := url.Parse(c.WebDAVURL)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || c.WebDAVUsername == "" || c.WebDAVPassword == "" {
 		return nil, errors.New("an HTTPS WebDAV directory and credentials are required")
 	}
 	if !filepath.IsAbs(c.HelperPython) || !filepath.IsAbs(c.HelperPath) || !filepath.IsAbs(c.LockDir) {
 		return nil, errors.New("absolute helper interpreter, script, and lock directory paths required")
+	}
+	return newClient(c)
+}
+
+func newClient(c Config) (*Client, error) {
+	if id, err := strconv.ParseUint(c.LibraryID, 10, 64); err != nil || id == 0 || c.APIKey == "" {
+		return nil, errors.New("personal Zotero library ID and API key required")
 	}
 	transport := &http.Client{
 		Timeout:       45 * time.Second,

@@ -62,6 +62,7 @@ type fakeGoogle struct {
 	files     []model.DriveFile
 	bytes     map[string]string
 	downloads int
+	fileLists int
 }
 
 func (g *fakeGoogle) Send(_ context.Context, p, name string) (string, error) {
@@ -75,6 +76,7 @@ func (g *fakeGoogle) Send(_ context.Context, p, name string) (string, error) {
 	return "gmail-id", nil
 }
 func (g *fakeGoogle) Files(context.Context) ([]model.DriveFile, error) {
+	g.fileLists++
 	for i := range g.files {
 		if g.files[i].CreatedTime == "" {
 			g.files[i].CreatedTime = time.Now().UTC().Format(time.RFC3339Nano)
@@ -163,6 +165,11 @@ func TestBaselineBatchOversizeAndDelayedSource(t *testing.T) {
 	f.o.Backfill = "subset"
 	f.run(t)
 	f.run(t)
+	if len(f.g.sent) != 3 || f.jobs(t)["late"].State != "waiting_pdf" {
+		t.Fatal("backfill processed queued work outside the selected collection")
+	}
+	f.o.Backfill = ""
+	f.run(t)
 	if len(f.g.sent) != 4 {
 		t.Fatalf("sent %d; expected one e-mail per eligible paper", len(f.g.sent))
 	}
@@ -218,9 +225,9 @@ func TestSourceChoiceAndRoundTrip(t *testing.T) {
 		t.Fatalf("crossed parents/duplicates: %+v", f.z.archives)
 	}
 	f.g.files[0].Version = "2" // New revision, unchanged bytes.
-	f.run(t)
-	if len(f.z.archives) != 2 {
-		t.Fatal("repeated bytes archived twice")
+	duplicate := f.run(t)
+	if len(f.z.archives) != 2 || len(duplicate.Actions) != 1 || duplicate.Actions[0] != "already archived: a" {
+		t.Fatalf("repeated bytes wrote or reported another archive: %+v", duplicate)
 	}
 	f.g.files[0].Version = "3"
 	f.g.bytes["a"] = "%PDF-more ink"
@@ -608,5 +615,106 @@ func TestSupersededUndownloadedRevisionStopsRetrying(t *testing.T) {
 	}
 	if states["1"] != "superseded" || states["2"] != "archived" || len(f.z.archives) != 1 {
 		t.Fatal(states, f.z.archives)
+	}
+}
+
+func TestScopedSendLeavesOtherJobsAndExportsForLater(t *testing.T) {
+	f := newFixture(t)
+	f.o.Direction = "send"
+	f.add("baseline", "%PDF-old")
+	f.add("selected", "%PDF-one")
+	f.o.Item = "selected"
+	f.run(t)
+	f.run(t)
+	if len(f.g.sent) != 1 || f.g.fileLists != 0 || f.jobs(t)["baseline"].State != "baseline" {
+		t.Fatal("initial selected send failed to seed the collection or repeated a delivery")
+	}
+	f.add("new", "%PDF-two")
+	f.add("later", "%PDF-three")
+	if err := f.s.PutJob(model.Job{Paper: model.Paper{Key: "interrupted"}, State: "sending"}); err != nil {
+		t.Fatal(err)
+	}
+	jobs := f.jobs(t)
+	f.g.files = []model.DriveFile{{ID: "export", Version: "1", Name: jobs["selected"].OutboundName}}
+	f.g.bytes["export"] = "%PDF-notes"
+	f.o.Item = "new"
+	f.run(t)
+	if len(f.g.sent) != 2 || f.g.fileLists != 0 || len(f.z.archives) != 0 || f.jobs(t)["interrupted"].State != "sending" {
+		t.Fatal("single-paper send touched an unrelated job or an export")
+	}
+	if _, ok := f.jobs(t)["later"]; ok {
+		t.Fatal("targeted discovery changed another job")
+	}
+	f.o.Item, f.o.Direction = "", "receive"
+	f.run(t)
+	f.run(t)
+	if len(f.g.sent) != 2 || len(f.z.archives) != 1 || f.z.archives[0].parent != "selected" || f.jobs(t)["interrupted"].State != "sending" {
+		t.Fatal("receive-only sync changed outgoing state or duplicated an archive")
+	}
+	if _, ok := f.jobs(t)["later"]; ok {
+		t.Fatal("receive-only sync discovered unrelated outgoing jobs")
+	}
+}
+
+func TestTargetedSendRequiresCurrentMembership(t *testing.T) {
+	f := newFixture(t)
+	f.add("moved", "%PDF-test")
+	f.run(t)
+	f.o.Item = "moved"
+	f.z.collections["root"] = nil
+	if _, err := engine.Run(context.Background(), f.s, f.z, f.g, f.o); err == nil {
+		t.Fatal("sent an item from cached membership after removal from the collection")
+	}
+	l := faultLibrary{fakeLibrary: f.z, rootError: errors.New("membership unavailable")}
+	if _, err := engine.Run(context.Background(), f.s, l, f.g, f.o); err == nil {
+		t.Fatal("used stale membership when Zotero lookup failed")
+	}
+	if len(f.g.sent) != 0 || f.jobs(t)["moved"].State != "baseline" {
+		t.Fatal("failed lookup changed the selected item")
+	}
+}
+
+func TestReceiveOnlyLeavesInitialBaselineUnseeded(t *testing.T) {
+	f := newFixture(t)
+	f.add("existing", "%PDF-original")
+	f.o.Direction = "receive"
+	f.run(t)
+	init, err := f.s.Initialized()
+	if err != nil || init || len(f.jobs(t)) != 0 || f.g.fileLists != 1 {
+		t.Fatal("receive-only sync initiated outbound discovery", err)
+	}
+}
+
+func TestPendingSendWaitsForVerifiedMembership(t *testing.T) {
+	f := newFixture(t)
+	f.run(t)
+	f.add("delayed", "")
+	f.run(t)
+	if f.jobs(t)["delayed"].State != "waiting_pdf" {
+		t.Fatal("expected a queued retry")
+	}
+	f.z.pdfs["source-delayed"] = "%PDF-ready"
+	f.o.Direction = "send"
+	unavailable := faultLibrary{fakeLibrary: f.z, rootError: errors.New("library unavailable")}
+	report, err := engine.Run(context.Background(), f.s, unavailable, f.g, f.o)
+	if err != nil || len(report.Problems) == 0 || len(f.g.sent) != 0 {
+		t.Fatal("failed membership lookup sent queued paper or went unreported", report, err)
+	}
+	f.o.Direction = "both"
+	beforeLists := f.g.fileLists
+	_, err = engine.Run(context.Background(), f.s, unavailable, f.g, f.o)
+	if err != nil || len(f.g.sent) != 0 || f.g.fileLists != beforeLists+1 {
+		t.Fatal("library outage should leave independent Drive intake available", err)
+	}
+	f.z.collections["root"] = nil
+	f.run(t)
+	if f.jobs(t)["delayed"].State != "waiting_pdf" || len(f.g.sent) != 0 {
+		t.Fatal("the retry was sent after the paper left the watched collection")
+	}
+	f.add("delayed", "%PDF-ready")
+	f.run(t)
+	f.run(t)
+	if len(f.g.sent) != 1 || f.jobs(t)["delayed"].State != "submitted" {
+		t.Fatal("paper did not resume exactly once after re-entering the collection")
 	}
 }

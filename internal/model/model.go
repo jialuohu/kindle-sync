@@ -75,11 +75,26 @@ type Store interface {
 }
 type Options struct {
 	Root, Backfill, Item, Attachment, ReturnFile, MatchParent, MatchVersion, Spool string
-	Artifact                                                                       string
+	Direction, Artifact                                                            string
 	ArtifactNames                                                                  map[string]string
 	MaxEmailBytes                                                                  int64
 	DryRun, SkipReturns                                                            bool
 }
+
+// SyncDirection keeps ordinary sync bidirectional and selects a single leg for targeted work.
+func (o Options) SyncDirection() string {
+	if o.Direction != "" {
+		return o.Direction
+	}
+	if o.ReturnFile != "" {
+		return "receive"
+	}
+	if o.Item != "" || o.Backfill != "" {
+		return "send"
+	}
+	return "both"
+}
+
 type Report struct {
 	Actions  []string `json:"actions"`
 	Problems []string `json:"problems"`

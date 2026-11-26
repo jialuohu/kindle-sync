@@ -1,4 +1,4 @@
-# Server setup
+# Linux server setup with systemd
 
 ## Install on Linux
 
@@ -53,7 +53,7 @@ Gmail grants permission to send and to verify the sender’s email address. Driv
 ## Verify one paper
 
 1. Pick a paper with a stored PDF in the reading collection. Run `ks sync --dry-run`, then `ks sync` to record existing papers as a baseline. Later runs send papers when they first appear in the collection tree.
-2. Preview the filename with `ks sync --item ITEM_KEY --dry-run`, substituting the paper’s Zotero key. Send it with `ks sync --item ITEM_KEY`. If several PDFs qualify, add `--attachment ATTACHMENT_KEY`. To choose the artifact name (e.g., `quill` in `reed26-quill.pdf`), pass `--artifact quill` or set the item’s entry in `artifact_names` for scheduled runs.
+2. Look up the paper with `ks find "TITLE"` or use its Zotero key. Preview the filename with `ks sync --direction send --item ITEM_KEY --dry-run`, then remove `--dry-run` to send it. If several PDFs qualify, add `--attachment ATTACHMENT_KEY`. To choose the artifact name (e.g., `quill` in `reed26-quill.pdf`), pass `--artifact quill` or set the item’s entry in `artifact_names` for scheduled runs.
 3. Open the paper in your Kindle library, mark a page, and tap **Share → Google Drive → Upload**. In Drive, open the folder the Scribe created and copy its ID from the URL into `drive_folder_id`. Keep this folder for device exports since matching uses the delivery filename. Drive export requires a Scribe released in 2025 or later. [Scribe export instructions](https://digprjsurvey.amazon.com/csad/help/node/TP8wuaQilIlwlITVTL)
 4. Copy the exported PDF’s file ID from its Drive link and run `ks receive DRIVE_FILE_ID`. Sync Zotero and open the new **Kindle Notes** attachment under the original paper. Check your mark. Receiving the same PDF again should leave a single notes attachment.
 

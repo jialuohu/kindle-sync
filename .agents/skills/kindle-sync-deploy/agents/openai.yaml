@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Kindle Sync"
+  short_description: "Install or upgrade Kindle Sync with Docker Compose"
+  default_prompt: "Use $kindle-sync-deploy to deploy Kindle Sync with Docker Compose."

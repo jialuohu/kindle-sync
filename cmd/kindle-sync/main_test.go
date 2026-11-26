@@ -186,3 +186,105 @@ elif sys.argv[1] == 'attach':
 		t.Fatal(receipts, sends)
 	}
 }
+
+func TestFindUsesOnlyLiveZoteroMetadata(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	stateDir := filepath.Join(dir, "state")
+	b, err := json.Marshal(config{LibraryID: "123", Collection: "READ0001", StateDir: stateDir, ArtifactNames: map[string]string{"PAPER001": "Quill"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "zotero-api-key"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KINDLE_SYNC_CONFIG", configPath)
+	t.Setenv("CODEX_SECRETS_DIR", dir)
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+	http.DefaultTransport = roundTripper(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet || r.URL.Host != "api.zotero.org" || r.Header.Get("Zotero-API-Key") != "fixture" {
+			return nil, fmt.Errorf("unexpected lookup request %s %s", r.Method, r.URL)
+		}
+		var data string
+		switch r.URL.Path {
+		case "/keys/current":
+			data = `{"userID":123,"username":"example-user"}`
+		case "/users/123/collections/READ0001/items/top":
+			data = `[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"Catalog Records","date":"2026","creators":[{"creatorType":"author","lastName":"Reed"}]}}]`
+		case "/users/123/collections/READ0001/collections":
+			data = `[{"key":"NEST0001"}]`
+		case "/users/123/collections/NEST0001/items/top":
+			data = `[{"key":"PAPER002","data":{"itemType":"journalArticle","title":"Catalog Records about PAPER009","shortTitle":"New Index","abstractNote":"We present Leaf, a catalog index."}}]`
+		case "/users/123/collections/NEST0001/collections":
+			data = "[]"
+		default:
+			return nil, fmt.Errorf("unexpected metadata path %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(data)), Request: r}, nil
+	})
+	for _, tc := range []struct {
+		query, keys string
+	}{
+		{"catalog    records", "PAPER001 PAPER002"},
+		{"new INDEX", "PAPER002"},
+		{"Leaf", "PAPER002"},
+		{"QUILL", "PAPER001"},
+		{"PAPER002", "PAPER002"},
+		{"PAPER009", ""},
+		{"zotero://select/library/items/PAPER001", "PAPER001"},
+		{"https://www.zotero.org/example-user/collections/NEST0001/items/PAPER002/collection", "PAPER002"},
+		{"https://api.zotero.org/users/123/items/PAPER001", "PAPER001"},
+		{"missing", ""},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := run(context.Background(), []string{"find", tc.query, "--json"}, &out); err != nil {
+				t.Fatal(err)
+			}
+			var results struct{ Matches []model.Paper }
+			if err := json.Unmarshal(out.Bytes(), &results); err != nil || results.Matches == nil {
+				t.Fatalf("invalid lookup response %q: %v", out.String(), err)
+			}
+			var keys []string
+			for _, paper := range results.Matches {
+				keys = append(keys, paper.Key)
+				if paper.Key == "PAPER001" && (paper.FirstAuthor != "Reed" || paper.Year != "2026" || paper.Artifact != "Quill") {
+					t.Fatalf("missing disambiguation metadata: %+v", paper)
+				}
+			}
+			if got := strings.Join(keys, " "); got != tc.keys {
+				t.Fatalf("got %q, want %q", got, tc.keys)
+			}
+		})
+	}
+	for _, link := range []string{"zotero://select/groups/2/items/PAPER001", "https://www.zotero.org/someone-else/items/PAPER001", "https://api.zotero.org/users/555/items/PAPER001", "https://example.invalid/items/PAPER001"} {
+		if err := run(context.Background(), []string{"find", link}, io.Discard); err == nil {
+			t.Errorf("accepted foreign link: %s", link)
+		}
+	}
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Fatal("read-only lookup created a state database", err)
+	}
+}
+
+func TestRejectIncompatibleOrEmptySelectors(t *testing.T) {
+	for _, args := range [][]string{
+		{"sync", "--direction", "invalid"},
+		{"sync", "--direction", ""},
+		{"sync", "--item", ""},
+		{"sync", "--backfill", ""},
+		{"sync", "--direction", "both", "--item", "PAPER001"},
+		{"sync", "--direction", "receive", "--backfill", "READ0001"},
+	} {
+		if _, err := parseOptions(args, config{Folder: "folder"}); err == nil {
+			t.Errorf("accepted invalid sync arguments %q", args)
+		}
+	}
+	if _, err := parseOptions([]string{"sync", "--direction", "receive"}, config{}); err == nil {
+		t.Fatal("accepted receive-only sync with no folder")
+	}
+}

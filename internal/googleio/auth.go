@@ -179,7 +179,13 @@ func Authorize(ctx context.Context, c Config, service string) error {
 	if service == "gmail" && !validAddress(c.Sender) {
 		return errors.New("configure the intended Gmail sender before authorization")
 	}
-	listener, err := net.Listen("tcp4", callbackHost)
+	// A one-off container publishes this port only on the host loopback.
+	// Google and the Host header check always use the original redirect URL.
+	listenHost := callbackHost
+	if os.Getenv("KINDLE_SYNC_OAUTH_CONTAINER") == "1" {
+		listenHost = "0.0.0.0:43891"
+	}
+	listener, err := net.Listen("tcp4", listenHost)
 	if err != nil {
 		return fmt.Errorf("cannot bind OAuth callback at %s", callbackHost)
 	}

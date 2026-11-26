@@ -12,12 +12,8 @@ Kindle filenames combine the first author's surname, the last two digits of the 
 
 ## Get started
 
-Build the Linux server package from this checkout. Use `GOARCH=arm64` for an ARM64 server.
+Open this checkout in Codex and ask **“Deploy Kindle Sync”**. The repository's `$kindle-sync-deploy` skill sets up Docker Compose and verifies two scheduled rounds. The [Docker guide](docs/docker.md) also covers moving an existing queue. For a native Linux service, use the [systemd guide](docs/setup.md).
 
-```sh
-make dist GOARCH=amd64
-```
-
-Follow the [setup guide](docs/setup.md) to connect your accounts and test one paper. The first sync skips delivery of papers already in your collection. To send one of them, use `sync --item ITEM_KEY`. Once enabled, the timer checks for new papers and returned notes every five minutes.
+Ask **“Sync my Kindle”** for a two-way sync, **“Send Quill to my Kindle”** for one paper, or **“Bring my Kindle notes back”** for notes only. The `$kindle-sync` skill uses the same queue as the five-minute scheduler. On the first sync, papers already in the collection become the baseline. Ask for one by name to send it.
 
 To open the newest annotated PDF when you double-click a paper, install the optional [Kindle Notes plugin for Zotero](zotero-plugin/README.md).

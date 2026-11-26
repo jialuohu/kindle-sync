@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kindle Sync"
+  short_description: "Send Zotero papers and bring Kindle notes back"
+  default_prompt: "Use $kindle-sync to sync my Kindle with Zotero."

@@ -203,7 +203,7 @@ func (r *round) receive(ctx context.Context, x model.Receipt, current bool) erro
 		if old.Parent == x.Parent && old.Hash == x.Hash && old.Child != "" {
 			x.Child = old.Child
 			if old.State == "archived" {
-				return r.archived(x, path)
+				return r.archived(x, path, "already archived: "+x.ID)
 			}
 		}
 	}
@@ -217,7 +217,7 @@ func (r *round) receive(ctx context.Context, x model.Receipt, current bool) erro
 	if child == "" {
 		return r.receiptProblem(x, errors.New("archive returned no verified child attachment key"))
 	}
-	return r.archived(x, path)
+	return r.archived(x, path, "archived "+x.ID+" under "+x.Parent+" as "+x.Child)
 }
 
 func (r *round) receiptProblem(x model.Receipt, err error) error {
@@ -226,7 +226,7 @@ func (r *round) receiptProblem(x model.Receipt, err error) error {
 	return r.saveReceipt(x)
 }
 
-func (r *round) archived(x model.Receipt, path string) error {
+func (r *round) archived(x model.Receipt, path, action string) error {
 	x.State, x.Error = "archived", ""
 	if err := r.saveReceipt(x); err != nil {
 		return err
@@ -237,7 +237,7 @@ func (r *round) archived(x model.Receipt, path string) error {
 	if err := os.Remove(filepath.Dir(path)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	r.report.Actions = append(r.report.Actions, "archived "+x.ID+" under "+x.Parent+" as "+x.Child)
+	r.report.Actions = append(r.report.Actions, action)
 	return nil
 }
 

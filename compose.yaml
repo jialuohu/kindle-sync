@@ -1,0 +1,32 @@
+name: kindle-sync
+
+services:
+  sync:
+    image: ${KINDLE_SYNC_IMAGE:-kindle-sync:local}
+    build:
+      context: .
+      args:
+        APP_UID: ${KINDLE_SYNC_UID:-1000}
+        APP_GID: ${KINDLE_SYNC_GID:-1000}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 10m
+    environment:
+      KINDLE_SYNC_CONFIG: /etc/kindle-sync/config.json
+      CODEX_SECRETS_DIR: /etc/kindle-sync/secrets
+    volumes:
+      - type: bind
+        source: ${KINDLE_SYNC_CONFIG_FILE:?set KINDLE_SYNC_CONFIG_FILE to the private config file}
+        target: /etc/kindle-sync/config.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CODEX_SECRETS_DIR:?set CODEX_SECRETS_DIR to the dedicated Kindle Sync secrets directory}
+        target: /etc/kindle-sync/secrets
+        bind:
+          create_host_path: false
+      - state:/var/lib/kindle-sync
+
+volumes:
+  state:
