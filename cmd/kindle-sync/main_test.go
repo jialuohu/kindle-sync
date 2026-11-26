@@ -96,7 +96,8 @@ elif sys.argv[1] == 'attach':
 		case strings.HasSuffix(path, "/files/folder"):
 			body = []byte(`{"mimeType":"application/vnd.google-apps.folder","trashed":false}`)
 		case strings.HasSuffix(path, "/files"):
-			body = encode(map[string]any{"files": []any{export()}})
+			other := map[string]string{"id": "unrelated", "name": "unrelated.pdf", "version": "1"}
+			body = encode(map[string]any{"files": []any{other, export()}})
 		case strings.HasSuffix(path, "/files/export") && r.URL.Query().Get("alt") == "media":
 			body = returned
 		case strings.HasSuffix(path, "/files/export"):
@@ -169,8 +170,8 @@ elif sys.argv[1] == 'attach':
 	c.Folder = "folder"
 	write(configPath, encode(c))
 	exportName = jobs[0].Token + " Shared title.pdf"
-	invoke("sync")
-	invoke("sync")
+	invoke("receive", "export", "--json")
+	invoke("receive", "export")
 	_, receipts := status()
 	if sends != 2 || len(receipts) != 1 || receipts[0].State != "archived" || receipts[0].Child != "NOTES001" || receipts[0].Parent != "PAPER001" {
 		t.Fatal(receipts, sends)

@@ -44,14 +44,14 @@ func Run(ctx context.Context, store model.Store, library model.Zotero, google mo
 	for _, rec := range receipts {
 		r.receipts[revision{rec.ID, rec.Version}] = rec
 	}
-	if options.MatchFile == "" {
+	if options.ReturnFile == "" {
 		if err := r.outbound(ctx); err != nil {
 			return r.report, err
 		}
 	}
 	if options.SkipReturns {
-		if options.MatchFile != "" {
-			return r.report, errors.New("bind a Drive folder before matching an export")
+		if options.ReturnFile != "" {
+			return r.report, errors.New("bind a Drive folder before processing an export")
 		}
 		r.report.Actions = append(r.report.Actions, "Drive folder not yet bound; scanning for returns is paused")
 		return r.report, nil

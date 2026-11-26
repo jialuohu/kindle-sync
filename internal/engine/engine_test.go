@@ -235,7 +235,7 @@ func TestManualMatchAndPartialArchiveFromCachedBytes(t *testing.T) {
 	f.g.files = nil // The original Drive revision is no longer available.
 	f.add("unrelated", "%PDF-x")
 	f.z.partial = true
-	f.o.MatchFile, f.o.MatchParent = "missing", "CHOSEN"
+	f.o.ReturnFile, f.o.MatchParent = "missing", "CHOSEN"
 	f.run(t)
 	receipts, err = f.s.Receipts()
 	if err != nil || receipts[0].Child != "child-key" || receipts[0].State != "pending" {
@@ -309,7 +309,7 @@ func TestMatchOneRevisionAndRejectConflictingParent(t *testing.T) {
 	f.g.bytes["file"] = "%PDF-second"
 	f.g.files[0].Version = "2"
 	f.run(t)
-	f.o.MatchFile, f.o.MatchParent = "file", "RIGHT"
+	f.o.ReturnFile, f.o.MatchParent = "file", "RIGHT"
 	f.run(t)
 	if len(f.z.archives) != 1 || f.z.archives[0].bytes != "%PDF-second" {
 		t.Fatal(f.z.archives)
@@ -326,6 +326,35 @@ func TestMatchOneRevisionAndRejectConflictingParent(t *testing.T) {
 	f.run(t)
 	if len(f.z.archives) != 2 || f.z.archives[1].bytes != "%PDF-first" || f.z.archives[1].parent != "WRONG" {
 		t.Fatal(f.z.archives)
+	}
+}
+
+func TestReceiveOneCurrentExportAndResume(t *testing.T) {
+	f := newFixture(t)
+	f.run(t)
+	f.add("pilot", "%PDF-pilot")
+	f.run(t)
+	f.add("unsent", "%PDF-queued")
+	title := f.jobs(t)["pilot"].Token + " annotated.pdf"
+	f.g.files = []model.DriveFile{{ID: "other", Name: title, Version: "1"}, {ID: "pilot-export", Name: title, Version: "2"}}
+	f.g.bytes["pilot-export"] = "%PDF-annotated"
+	f.o.ReturnFile = "pilot-export"
+	f.z.partial = true
+	if report := f.run(t); len(report.Problems) != 1 {
+		t.Fatal(report)
+	}
+	f.run(t)
+	f.run(t)
+	receipts, err := f.s.Receipts()
+	if err != nil || len(receipts) != 1 || receipts[0].ID != "pilot-export" || receipts[0].Parent != "pilot" || receipts[0].State != "archived" {
+		t.Fatal(receipts, err)
+	}
+	if len(f.jobs(t)) != 1 || len(f.g.sent) != 1 || f.g.downloads != 1 || len(f.z.archives) != 2 || f.z.archives[1].previous != "child-key" {
+		t.Fatalf("jobs=%v mail=%v downloads=%d archive=%v", f.jobs(t), f.g.sent, f.g.downloads, f.z.archives)
+	}
+	f.g.files = nil
+	if _, err := engine.Run(context.Background(), f.s, f.z, f.g, f.o); err == nil {
+		t.Fatal("selected a stale revision after the file left the bound folder")
 	}
 }
 
@@ -409,7 +438,7 @@ func TestInvalidMatchLeavesReceiptAvailableForCorrection(t *testing.T) {
 	f.g.files = []model.DriveFile{{ID: "held", Version: "1", Name: "unrecognized.pdf"}}
 	f.g.bytes["held"] = "%PDF-annotations"
 	f.run(t)
-	f.o.MatchFile, f.o.MatchParent = "held", "INVALID"
+	f.o.ReturnFile, f.o.MatchParent = "held", "INVALID"
 	if _, err := engine.Run(context.Background(), f.s, f.z, f.g, f.o); err == nil {
 		t.Fatal("accepted nonexistent parent")
 	}

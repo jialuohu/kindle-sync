@@ -46,6 +46,7 @@ const usage = `kindle-sync [--config PATH] COMMAND [--json]
   resolve ITEM received|retry       Resolve an uncertain send after checking the device
   resolve ITEM rejected GMAIL_ID    Queue a retry after Amazon rejected that submission
   status                            Show the local queue and Drive receipts
+  receive DRIVE_FILE_ID             Process one current export using its delivery code
   match DRIVE_FILE_ID ITEM          Archive a returned PDF under the specified paper
 
 Config defaults to KINDLE_SYNC_CONFIG or /etc/kindle-sync/config.json.
@@ -133,7 +134,12 @@ func parseOptions(args []string, c config) (model.Options, error) {
 		if f.NArg() != 2 || f.Arg(0) == "" || !zotKey.MatchString(f.Arg(1)) {
 			return o, errors.New("match requires DRIVE_FILE_ID and Zotero paper key")
 		}
-		o.MatchFile, o.MatchParent = f.Arg(0), f.Arg(1)
+		o.ReturnFile, o.MatchParent = f.Arg(0), f.Arg(1)
+	} else if args[0] == "receive" {
+		if f.NArg() != 1 || f.Arg(0) == "" {
+			return o, errors.New("receive requires one Drive file ID")
+		}
+		o.ReturnFile = f.Arg(0)
 	} else if f.NArg() != 0 {
 		return o, errors.New("unexpected positional argument")
 	}
@@ -185,7 +191,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	switch args[0] {
-	case "auth", "sync", "status", "match", "resolve":
+	case "auth", "sync", "status", "match", "receive", "resolve":
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -245,8 +251,8 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer s.Close()
-	if args[0] == "match" && c.Folder == "" {
-		return errors.New("set drive_folder_id before matching an export")
+	if o.ReturnFile != "" && c.Folder == "" {
+		return errors.New("set drive_folder_id before processing an export")
 	}
 	if err := s.BindFolder(c.Folder, false); err != nil {
 		return err

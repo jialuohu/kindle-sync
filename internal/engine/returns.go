@@ -24,6 +24,9 @@ func (r *round) inbound(ctx context.Context) error {
 	listedVersions := make(map[string]string)
 	listComplete := err == nil
 	for _, f := range files {
+		if r.options.ReturnFile != "" && f.ID != r.options.ReturnFile {
+			continue
+		}
 		if f.ID == "" || f.Version == "" {
 			return errors.New("Drive file is missing identity or revision")
 		}
@@ -38,13 +41,21 @@ func (r *round) inbound(ctx context.Context) error {
 		}
 	}
 	var target revision
-	if r.options.MatchFile != "" {
+	if r.options.ReturnFile != "" {
 		if err != nil && r.options.MatchVersion == "" {
 			return fmt.Errorf("cannot identify current Drive revision: %w", err)
 		}
-		target, err = r.matchTarget(current)
-		if err != nil {
-			return err
+		if r.options.MatchParent != "" {
+			target, err = r.matchTarget(current)
+			if err != nil {
+				return err
+			}
+		} else {
+			version, ok := listedVersions[r.options.ReturnFile]
+			if !ok {
+				return errors.New("current PDF not found in the bound Drive folder")
+			}
+			target = revision{r.options.ReturnFile, version}
 		}
 	}
 	tokenParents := map[string]string{}
@@ -55,17 +66,17 @@ func (r *round) inbound(ctx context.Context) error {
 	}
 	work := make([]revision, 0)
 	for k, rec := range r.receipts {
-		if r.options.MatchFile != "" && k != target {
+		if r.options.ReturnFile != "" && k != target {
 			continue
 		}
 		if rec.State == "archived" {
-			if r.options.MatchFile != "" {
+			if r.options.ReturnFile != "" {
 				r.report.Actions = append(r.report.Actions, "already archived: "+rec.ID)
 			}
 			continue
 		}
 		if listComplete && rec.Hash == "" && rec.Child == "" && newerVersion(listedVersions[k.id], rec.Version) {
-			if r.options.MatchFile != "" {
+			if r.options.ReturnFile != "" {
 				return errors.New("Drive replaced this revision before it could be downloaded")
 			}
 			if rec.State != "superseded" {
@@ -78,7 +89,7 @@ func (r *round) inbound(ctx context.Context) error {
 			continue
 		}
 		if rec.State == "superseded" && !current[k] {
-			if r.options.MatchFile != "" {
+			if r.options.ReturnFile != "" {
 				return errors.New(rec.Error)
 			}
 			continue
@@ -104,7 +115,7 @@ func (r *round) inbound(ctx context.Context) error {
 				x.Parent = tokenParents[tokens[0]]
 			}
 		}
-		if r.options.MatchFile != "" {
+		if r.options.MatchParent != "" {
 			if x.Parent != "" && x.Parent != r.options.MatchParent {
 				return errors.New("export already identifies another parent")
 			}
@@ -150,7 +161,7 @@ func (r *round) matchTarget(current map[revision]bool) (revision, error) {
 	}
 	var candidates []revision
 	for key := range r.receipts {
-		if key.id != r.options.MatchFile {
+		if key.id != r.options.ReturnFile {
 			continue
 		}
 		if r.options.MatchVersion != "" {

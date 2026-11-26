@@ -67,9 +67,9 @@ type Store interface {
 	PutReceipt(Receipt) error // identity = drive file ID + version
 }
 type Options struct {
-	Root, Backfill, Item, Attachment, MatchFile, MatchParent, MatchVersion, Spool string
-	MaxEmailBytes                                                                 int64
-	DryRun, SkipReturns                                                           bool
+	Root, Backfill, Item, Attachment, ReturnFile, MatchParent, MatchVersion, Spool string
+	MaxEmailBytes                                                                  int64
+	DryRun, SkipReturns                                                            bool
 }
 type Report struct {
 	Actions  []string `json:"actions"`
