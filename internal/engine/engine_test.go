@@ -243,22 +243,18 @@ func TestManualMatchAndPartialArchiveFromCachedBytes(t *testing.T) {
 	f.g.bytes["missing"] = "%PDF-handwritten"
 	f.g.files = []model.DriveFile{{ID: "missing", Version: "2", Name: "lost the title.pdf"}}
 	f.run(t)
-	receipts, err := f.s.Receipts()
-	if err != nil || len(receipts) != 1 || receipts[0].State != "needs_match" {
-		t.Fatalf("receipts=%v err=%v", receipts, err)
-	}
-	f.g.files = nil // The original Drive revision is no longer available.
 	f.add("unrelated", "%PDF-x")
 	f.z.partial = true
 	f.o.ReturnFile, f.o.MatchParent = "missing", "CHOSEN"
 	f.run(t)
-	receipts, err = f.s.Receipts()
-	if err != nil || receipts[0].Child != "child-key" || receipts[0].State != "pending" {
+	receipts, err := f.s.Receipts()
+	if err != nil || len(receipts) != 1 || receipts[0].Child != "child-key" || receipts[0].State != "pending" {
 		t.Fatalf("partial progress lost: %+v, %v", receipts, err)
 	}
+	f.g.files = nil // Resume the explicit import after Drive stops serving the revision.
 	f.run(t)
 	f.run(t)
-	if f.z.validations != 1 || f.g.downloads != 1 || len(f.g.sent) != 0 || len(f.z.archives) != 2 || f.z.archives[1].previous != "child-key" || f.z.archives[1].bytes != "%PDF-handwritten" {
+	if f.g.downloads != 1 || len(f.g.sent) != 0 || len(f.z.archives) != 2 || f.z.archives[1].previous != "child-key" || f.z.archives[1].bytes != "%PDF-handwritten" {
 		t.Fatalf("mail=%v downloads=%d archives=%+v", f.g.sent, f.g.downloads, f.z.archives)
 	}
 }
@@ -388,6 +384,11 @@ func TestCollidingNamesReturnToTheirOwnPaper(t *testing.T) {
 		f.g.bytes[id] = "%PDF-" + id
 	}
 	f.run(t)
+	if len(f.z.archives) != 1 || f.z.archives[0].parent != "AAAA1111" || f.g.downloads != 1 {
+		t.Fatal("only the submitted paper should be claimed automatically", f.z.archives)
+	}
+	f.o.ReturnFile, f.o.MatchParent = "B", "BBBB2222"
+	f.run(t)
 	if len(f.z.archives) != 2 || f.z.archives[0].parent != "AAAA1111" || f.z.archives[1].parent != "BBBB2222" {
 		t.Fatal(f.z.archives)
 	}
@@ -428,7 +429,7 @@ func TestPreviouslyUnmatchedExportDoesNotAcquireNewParent(t *testing.T) {
 	p := &f.z.collections["root"][0]
 	p.FirstAuthor, p.Year, p.Title = "Reed", "2026", "Quill: Old names"
 	f.run(t)
-	if len(f.g.sent) != 1 || f.g.sent[0] != "reed26-quill-paper123.pdf" || len(f.z.archives) != 0 {
+	if len(f.g.sent) != 1 || f.g.sent[0] != "reed26-quill.pdf" || len(f.z.archives) != 0 || f.g.downloads != 0 {
 		t.Fatal(f.g.sent, f.z.archives)
 	}
 }
@@ -436,11 +437,12 @@ func TestPreviouslyUnmatchedExportDoesNotAcquireNewParent(t *testing.T) {
 func TestMatchOneRevisionAndRejectConflictingParent(t *testing.T) {
 	f := newFixture(t)
 	f.run(t)
-	f.g.bytes["file"] = "%PDF-first"
-	f.g.files = []model.DriveFile{{ID: "file", Version: "1", Name: "Old Name.pdf"}}
-	f.run(t)
+	// Prior releases kept unassigned exports. The cached revision remains
+	// available for an explicit match after Drive replaces it.
+	old := model.DriveFile{ID: "file", Version: "1", Name: "Old Name.pdf"}
+	seedLegacyHeld(t, f, old, "%PDF-first")
 	f.g.bytes["file"] = "%PDF-second"
-	f.g.files[0].Version = "2"
+	f.g.files = []model.DriveFile{{ID: "file", Version: "2", Name: old.Name}}
 	f.run(t)
 	f.o.ReturnFile, f.o.MatchParent = "file", "RIGHT"
 	f.run(t)
@@ -565,7 +567,7 @@ func TestLostLocalCommitAfterGmailAccepted(t *testing.T) {
 	}
 }
 
-func TestInvalidMatchLeavesReceiptAvailableForCorrection(t *testing.T) {
+func TestInvalidMatchLeavesPDFOnDriveForCorrection(t *testing.T) {
 	f := newFixture(t)
 	f.run(t)
 	f.g.files = []model.DriveFile{{ID: "held", Version: "1", Name: "unrecognized.pdf"}}
@@ -576,8 +578,8 @@ func TestInvalidMatchLeavesReceiptAvailableForCorrection(t *testing.T) {
 		t.Fatal("accepted nonexistent parent")
 	}
 	receipts, err := f.s.Receipts()
-	if err != nil || len(receipts) != 1 || receipts[0].Parent != "" || receipts[0].State != "needs_match" || len(f.z.archives) > 0 {
-		t.Fatalf("invalid target altered held receipt: %+v, %v", receipts, err)
+	if err != nil || len(receipts) != 0 || f.g.downloads != 0 || len(f.z.archives) > 0 {
+		t.Fatalf("invalid target imported the export: %+v, %v", receipts, err)
 	}
 	f.o.MatchParent = "VALID"
 	f.run(t)

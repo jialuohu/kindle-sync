@@ -35,7 +35,7 @@ func (c *Client) Files(ctx context.Context) ([]model.DriveFile, error) {
 	}
 	q := fmt.Sprintf("'%s' in parents and trashed = false and mimeType = 'application/pdf'", c.config.FolderID)
 	call := svc.Files.List().Spaces("drive").Q(q).PageSize(1000).
-		Fields("nextPageToken,incompleteSearch,files(id,name,version,md5Checksum,createdTime)")
+		Fields("nextPageToken,incompleteSearch,files(id,name,version,md5Checksum,createdTime,modifiedTime)")
 	var files []model.DriveFile
 	err = call.Pages(ctx, func(page *drive.FileList) error {
 		if page.IncompleteSearch {
@@ -45,7 +45,10 @@ func (c *Client) Files(ctx context.Context) ([]model.DriveFile, error) {
 			if f.Id == "" || f.Version <= 0 {
 				return errors.New("Drive returned a PDF without a stable identity or version")
 			}
-			files = append(files, model.DriveFile{ID: f.Id, Name: f.Name, Version: strconv.FormatInt(f.Version, 10), MD5: f.Md5Checksum, CreatedTime: f.CreatedTime})
+			files = append(files, model.DriveFile{
+				ID: f.Id, Name: f.Name, Version: strconv.FormatInt(f.Version, 10),
+				MD5: f.Md5Checksum, CreatedTime: f.CreatedTime, ModifiedTime: f.ModifiedTime,
+			})
 		}
 		return nil
 	})

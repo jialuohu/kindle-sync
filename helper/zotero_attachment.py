@@ -205,6 +205,26 @@ def _record_key(record: Mapping[str, Any]) -> str:
     raise IntakeError("attachment_record_missing_key")
 
 
+def _active_parent_library_version(client: Any, parent_key: str) -> int:
+    # A multi-item GET filtered to this parent returns its data and the library
+    # version in one response. A single-item GET returns the item's version.
+    rows = client.items(itemKey=parent_key, limit=1)
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise IntakeError("invalid_parent_item")
+    parent = rows[0]
+    if not isinstance(parent, Mapping):
+        raise IntakeError("invalid_parent_item")
+    data = _record_data(parent)
+    if _record_key(parent) != parent_key or data.get("deleted") or data.get("parentItem"):
+        raise IntakeError("invalid_parent_item")
+    if data.get("itemType") in (None, "", "annotation", "note", "attachment"):
+        raise IntakeError("invalid_parent_item")
+    version = client.request.headers.get("Last-Modified-Version", "")
+    if not re.fullmatch(r"[1-9][0-9]*", version):
+        raise IntakeError("invalid_parent_library_version")
+    return int(version)
+
+
 def _find_attachment(
     children: Sequence[Mapping[str, Any]],
     *,
@@ -297,6 +317,7 @@ def _create_attachment(
     parent_key: str,
     basename: str,
     *,
+    library_version: int,
     correlation_title: str | None = None,
 ) -> str:
     template = client.item_template("attachment", linkmode="imported_file")
@@ -313,7 +334,7 @@ def _create_attachment(
             "filename": basename,
         }
     )
-    result = client.create_items([template])
+    result = client.create_items([template], last_modified=library_version)
     if not isinstance(result, Mapping):
         raise IntakeError("attachment_metadata_create_failed")
     return _created_key(result)
@@ -325,6 +346,7 @@ def _create_attachment_with_recovery(
     basename: str,
     before: Sequence[Mapping[str, Any]],
     expected_md5: str,
+    library_version: int,
 ) -> str:
     """Recover only this request's committed child when its response is lost."""
 
@@ -335,11 +357,14 @@ def _create_attachment_with_recovery(
             client,
             parent_key,
             basename,
+            library_version=library_version,
             correlation_title=correlation_title,
         )
     except IntakeError:
         raise
     except Exception as exc:
+        if client.request.status_code == 412:
+            raise IntakeError("zotero_library_changed_before_attachment_create") from exc
         try:
             after = client.everything(client.children(parent_key))
         except Exception as reconcile_exc:
@@ -862,12 +887,7 @@ def attach_webdav(
             )
 
         with _attachment_lock(source, parent_key, basename):
-            parent = client.item(parent_key)
-            parent_data = _record_data(parent)
-            if _record_key(parent) != parent_key or parent_data.get("deleted") or parent_data.get("parentItem"):
-                raise IntakeError("invalid_parent_item")
-            if parent_data.get("itemType") in (None, "", "annotation", "note", "attachment"):
-                raise IntakeError("invalid_parent_item")
+            library_version = _active_parent_library_version(client, parent_key)
             children = client.everything(client.children(parent_key))
             if not isinstance(children, list):
                 raise IntakeError("invalid_children_response")
@@ -920,6 +940,7 @@ def attach_webdav(
                     basename,
                     children,
                     str(source_pdf["md5"]),
+                    library_version,
                 )
                 status = "created"
                 _reconcile_created_attachment(
@@ -1067,12 +1088,7 @@ def attach_zotero_cloud(
         if client is None:
             client = (client_factory or _new_client)(source)
         with _attachment_lock(source, parent_key, basename):
-            parent = client.item(parent_key)
-            parent_data = _record_data(parent)
-            if _record_key(parent) != parent_key or parent_data.get("deleted") or parent_data.get("parentItem"):
-                raise IntakeError("invalid_parent_item")
-            if parent_data.get("itemType") in (None, "", "annotation", "note", "attachment"):
-                raise IntakeError("invalid_parent_item")
+            library_version = _active_parent_library_version(client, parent_key)
             children = client.everything(client.children(parent_key))
             if not isinstance(children, list):
                 raise IntakeError("invalid_children_response")
@@ -1093,6 +1109,7 @@ def attach_zotero_cloud(
                     basename,
                     children,
                     str(source_pdf["md5"]),
+                    library_version,
                 )
                 status = "created"
                 _reconcile_created_attachment(

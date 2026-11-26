@@ -34,8 +34,7 @@ func (r *round) allocateName(p model.Paper, artifact string) (string, error) {
 			reserved[foldedName(job.OutboundName)] = true
 		}
 	}
-	// An existing, unrelated or unmatched export must not acquire a parent
-	// just because a newly queued paper would have the same filename.
+	// Honor names already pinned to other parents or held by older releases.
 	for _, rec := range r.receipts {
 		if rec.Parent != p.Key {
 			reserved[returnedName(rec.Name)] = true
@@ -69,42 +68,44 @@ func (r *round) deliveryParents() parentIndex {
 		if job.Token != "" {
 			parents.add(job.Token, job.Key)
 		}
-		switch job.State {
-		case "sending", "submitted", "uncertain", "confirmed_received", "manual_upload":
-			if job.OutboundName != "" {
-				parents.add(foldedName(job.OutboundName), job.Key)
-			}
+		if job.OutboundName != "" {
+			parents.add(foldedName(job.OutboundName), job.Key)
 		}
 	}
 	return parents
 }
 
-func (m parentIndex) lookup(name string) string {
-	short, known := m[returnedName(name)]
+func (m parentIndex) delivery(file model.DriveFile, jobs map[string]model.Job) string {
+	key, known := m[returnedName(file.Name)]
 	// Older exports may include extra words or turn spaces into underscores
 	// around the original KRS token.
-	tokens := tokenPattern.FindAllString(strings.ReplaceAll(strings.ToUpper(name), "_", " "), -1)
-	switch len(tokens) {
-	case 0:
-		return short
-	case 1:
-		if legacy, ok := m[tokens[0]]; ok {
-			if known && short != legacy {
-				return ""
-			}
-			return legacy
-		}
-		return short
-	default:
+	tokens := tokenPattern.FindAllString(strings.ReplaceAll(strings.ToUpper(file.Name), "_", " "), -1)
+	if len(tokens) > 1 {
 		return ""
 	}
-}
-
-func canBeExport(j model.Job, file model.DriveFile) bool {
-	if j.Token != "" || j.NamedAt == "" {
-		return true // Older deliveries have no timestamp.
+	if len(tokens) == 1 {
+		if legacy, ok := m[tokens[0]]; ok {
+			if known && key != legacy {
+				return ""
+			}
+			key = legacy
+		}
+	}
+	j := jobs[key]
+	if j.State != "submitted" && j.State != "confirmed_received" {
+		return ""
+	}
+	if j.NamedAt == "" {
+		// Older deliveries used a random token instead of a timestamp.
+		if len(tokens) == 1 && tokens[0] == j.Token {
+			return key
+		}
+		return ""
 	}
 	named, e1 := time.Parse(time.RFC3339Nano, j.NamedAt)
 	created, e2 := time.Parse(time.RFC3339Nano, file.CreatedTime)
-	return e1 == nil && e2 == nil && !created.Before(named)
+	if e1 == nil && e2 == nil && created.After(named) {
+		return key
+	}
+	return ""
 }

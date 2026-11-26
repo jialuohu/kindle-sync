@@ -3,12 +3,15 @@ package zotero
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"kindle-sync/internal/model"
 )
 
 func webClient(t *testing.T, handler http.HandlerFunc) *Client {
@@ -32,7 +35,7 @@ func TestMembersFollowsPaginationAndNestedCollections(t *testing.T) {
 		w.Header().Set("Last-Modified-Version", "19")
 		switch r.URL.Path {
 		case "/collections/ROOT0001/collections":
-			fmt.Fprint(w, `[{"key":"LEAF0001"}]`)
+			fmt.Fprint(w, `[{"key":"LEAF0001"},{"key":"GONE0001","data":{"deleted":true}}]`)
 		case "/collections/ROOT0001/items/top":
 			w.Header().Set("Total-Results", "2")
 			switch r.URL.Query().Get("start") {
@@ -47,7 +50,7 @@ func TestMembersFollowsPaginationAndNestedCollections(t *testing.T) {
 		case "/collections/LEAF0001/collections":
 			fmt.Fprint(w, "[]")
 		case "/collections/LEAF0001/items/top":
-			fmt.Fprint(w, `[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"A"}},{"key":"PAPER002","data":{"itemType":"conferencePaper","title":"B"}}]`)
+			fmt.Fprint(w, `[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"A"}},{"key":"PAPER002","data":{"itemType":"conferencePaper","title":"B"}},{"key":"PAPER003","data":{"itemType":"journalArticle","deleted":1}}]`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -117,14 +120,16 @@ func TestSourcesFiltersStoredPDFs(t *testing.T) {
 
 func TestValidateParentRejectsDeletedChildAndMismatchedRecords(t *testing.T) {
 	for _, tc := range []struct {
-		data string
-		ok   bool
+		data     string
+		ok, gone bool
 	}{
-		{`"key":"PAPER001","itemType":"conferencePaper"`, true},
-		{`"key":"PAPER001","itemType":"journalArticle","deleted":1`, false},
-		{`"key":"PAPER001","itemType":"attachment"`, false},
-		{`"key":"PAPER002","itemType":"journalArticle"`, false},
-		{`"itemType":"journalArticle"`, false},
+		{`"key":"PAPER001","itemType":"conferencePaper"`, true, false},
+		{`"key":"PAPER001","itemType":"journalArticle","deleted":1`, false, true},
+		{`"key":"PAPER001","itemType":"journalArticle","deleted":true`, false, true},
+		{`"key":"PAPER001","itemType":"journalArticle","deleted":"unknown"`, false, false},
+		{`"key":"PAPER001","itemType":"attachment"`, false, false},
+		{`"key":"PAPER002","itemType":"journalArticle"`, false, false},
+		{`"itemType":"journalArticle"`, false, false},
 	} {
 		c := webClient(t, func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/items/PAPER001" {
@@ -133,8 +138,18 @@ func TestValidateParentRejectsDeletedChildAndMismatchedRecords(t *testing.T) {
 			}
 			fmt.Fprintf(w, `{"key":"PAPER001","data":{%s}}`, tc.data)
 		})
-		if err := c.ValidateParent(context.Background(), "PAPER001"); (err == nil) != tc.ok {
-			t.Errorf("expected ok=%t for %s, got %v", tc.ok, tc.data, err)
+		if err := c.ValidateParent(context.Background(), "PAPER001"); (err == nil) != tc.ok || errors.Is(err, model.ErrParentGone) != tc.gone {
+			t.Errorf("expected ok=%t gone=%t for %s, got %v", tc.ok, tc.gone, tc.data, err)
+		}
+	}
+}
+
+func TestValidateParentOnlyTreatsHTTPNotFoundAsGone(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden, http.StatusServiceUnavailable} {
+		c := webClient(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) })
+		err := c.ValidateParent(context.Background(), "PAPER001")
+		if err == nil || errors.Is(err, model.ErrParentGone) != (status == http.StatusNotFound) {
+			t.Errorf("status %d: %v", status, err)
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 
 	"kindle-sync/internal/model"
 )
@@ -20,9 +21,9 @@ func (r *round) inbound(ctx context.Context) error {
 		r.report.Problems = append(r.report.Problems, "listing Drive exports: "+err.Error())
 	}
 	current := make(map[revision]bool)
-	newlyListed := make(map[revision]bool)
 	listedVersions := make(map[string]string)
 	listComplete := err == nil
+	parents := r.deliveryParents()
 	for _, f := range files {
 		if r.options.ReturnFile != "" && f.ID != r.options.ReturnFile {
 			continue
@@ -36,9 +37,12 @@ func (r *round) inbound(ctx context.Context) error {
 		}
 		current[key] = true
 		listedVersions[f.ID] = f.Version
-		if _, ok := r.receipts[key]; !ok {
-			newlyListed[key] = true
-			r.receipts[key] = model.Receipt{DriveFile: f, State: "pending"}
+		if _, ok := r.receipts[key]; ok {
+			continue
+		}
+		parent := parents.delivery(f, r.jobs)
+		if parent != "" || r.options.MatchParent != "" {
+			r.receipts[key] = model.Receipt{DriveFile: f, Parent: parent, State: "pending"}
 		}
 	}
 	var target revision
@@ -57,9 +61,12 @@ func (r *round) inbound(ctx context.Context) error {
 				return errors.New("current PDF not found in the bound Drive folder")
 			}
 			target = revision{r.options.ReturnFile, version}
+			if _, found := r.receipts[target]; !found {
+				r.report.Actions = append(r.report.Actions, "left on Drive: no matching delivery for "+r.options.ReturnFile)
+				return nil
+			}
 		}
 	}
-	parents := r.deliveryParents()
 	work := make([]revision, 0)
 	for k, rec := range r.receipts {
 		if r.options.ReturnFile != "" && k != target {
@@ -68,6 +75,14 @@ func (r *round) inbound(ctx context.Context) error {
 		if rec.State == "archived" {
 			if r.options.ReturnFile != "" {
 				r.report.Actions = append(r.report.Actions, "already archived: "+rec.ID)
+			}
+			continue
+		}
+		// Honor the pinned parent on retries. Older releases also cached
+		// unassigned PDFs or matched jobs that had never been sent.
+		if r.options.MatchParent == "" && (rec.Parent == "" || parents.delivery(rec.DriveFile, r.jobs) != rec.Parent) {
+			if r.options.ReturnFile != "" {
+				r.report.Actions = append(r.report.Actions, "left on Drive: no matching delivery for "+rec.ID)
 			}
 			continue
 		}
@@ -93,45 +108,42 @@ func (r *round) inbound(ctx context.Context) error {
 		work = append(work, k)
 	}
 	sort.Slice(work, func(i, j int) bool {
-		if work[i].id == work[j].id {
-			return work[i].version < work[j].version
+		a, b := r.receipts[work[i]].DriveFile, r.receipts[work[j]].DriveFile
+		at, bt := exportTime(a), exportTime(b)
+		if !at.Equal(bt) {
+			return at.Before(bt)
 		}
-		return work[i].id < work[j].id
+		if a.ID != b.ID {
+			return a.ID < b.ID
+		}
+		av, _ := strconv.ParseUint(a.Version, 10, 64)
+		bv, _ := strconv.ParseUint(b.Version, 10, 64)
+		if av != bv {
+			return av < bv
+		}
+		return a.Version < b.Version
 	})
 	for _, k := range work {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		x := r.receipts[k]
-		// A later delivery with the same short name cannot claim a previously
-		// unmatched export. The first observation stores the match decision.
-		if x.Parent == "" && newlyListed[k] {
-			if key := parents.lookup(x.Name); key != "" && canBeExport(r.jobs[key], x.DriveFile) {
-				x.Parent = key
-			}
-		}
 		if r.options.MatchParent != "" {
-			if x.Parent != "" && x.Parent != r.options.MatchParent {
-				return errors.New("export already identifies another parent")
-			}
-			if r.receipts[k].Parent == "" {
-				if err := r.library.ValidateParent(ctx, r.options.MatchParent); err != nil {
-					return fmt.Errorf("cannot match export to Zotero parent: %w", err)
-				}
-			}
 			x.Parent = r.options.MatchParent
 		}
-		if x.State == "needs_match" && x.Parent == "" && digestPattern.MatchString(x.Hash) {
-			if info, err := os.Stat(r.receiptPath(x)); err == nil && info.Mode().IsRegular() {
-				continue
+		ok, err := r.canArchiveToParent(ctx, x.Parent)
+		if err != nil {
+			if r.options.ReturnFile != "" {
+				return err
 			}
+			r.report.Problems = append(r.report.Problems, x.ID+": "+err.Error())
+			continue
+		}
+		if !ok {
+			continue
 		}
 		if r.options.DryRun {
-			action := "would hold for matching: "
-			if x.Parent != "" {
-				action = "would reconcile export for " + x.Parent + ": "
-			}
-			r.report.Actions = append(r.report.Actions, action+x.ID)
+			r.report.Actions = append(r.report.Actions, "would reconcile export for "+x.Parent+": "+x.ID)
 			continue
 		}
 		if err := r.receive(ctx, x, current[k]); err != nil {
@@ -139,6 +151,15 @@ func (r *round) inbound(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// The Zotero plugin opens the most recently added attachment. Archive a batch oldest first.
+func exportTime(f model.DriveFile) time.Time {
+	if modified, err := time.Parse(time.RFC3339Nano, f.ModifiedTime); err == nil {
+		return modified
+	}
+	created, _ := time.Parse(time.RFC3339Nano, f.CreatedTime)
+	return created
 }
 
 // Drive's monotonically increasing version is a decimal integer encoded as a string.
@@ -188,11 +209,6 @@ func (r *round) receive(ctx context.Context, x model.Receipt, current bool) erro
 	path, err := r.materialize(ctx, &x, current)
 	if err != nil {
 		return r.receiptProblem(x, err)
-	}
-	if x.Parent == "" {
-		x.State, x.Error = "needs_match", "export does not identify a unique delivery"
-		r.report.Actions = append(r.report.Actions, "needs match: "+x.ID)
-		return r.saveReceipt(x)
 	}
 	x.State, x.Error = "pending", ""
 	// Save the identity of the parent and bytes before a potentially committing remote write.

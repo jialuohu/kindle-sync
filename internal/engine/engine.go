@@ -311,10 +311,10 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	}
 	j.Source, j.SourceHash, j.Error, j.Candidates = source.Key, hash, "", nil
 	j.OutboundName = name
-	if j.NamedAt == "" && j.Token == "" {
-		// Drive exposes millisecond creation times. An older, unrelated PDF
-		// can already exist in the bound folder on our very first scan.
-		j.NamedAt = time.Now().UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
+	if j.Token == "" {
+		// A rejected or interrupted attempt may be retried much later. A
+		// same-name PDF created before this attempt cannot be its export.
+		j.NamedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	if size > r.options.MaxEmailBytes {
 		// Reserve the name before publishing the file so an interrupted run

@@ -88,6 +88,8 @@ elif sys.argv[1] == 'attach':
 			}
 		case strings.HasSuffix(path, "/READ0001/collections"):
 			body = []byte("[]")
+		case path == "/users/123/items/PAPER001":
+			body = []byte(`{"key":"PAPER001","data":{"key":"PAPER001","itemType":"journalArticle"}}`)
 		case strings.HasSuffix(path, "/PAPER001/children"):
 			body = []byte(`[{"key":"FILE0001","data":{"itemType":"attachment","parentItem":"PAPER001","linkMode":"imported_url","contentType":"application/pdf","filename":"original.pdf"}}]`)
 		case strings.HasSuffix(path, "/messages/send"):
@@ -180,7 +182,10 @@ elif sys.argv[1] == 'attach':
 	write(configPath, encode(c))
 	exportName = "reed26-quill - Kindle.pdf"
 	invoke("receive", "export", "--json")
-	invoke("receive", "export")
+	invoke("sync", "--direction", "receive")
+	if got := string(invoke("receive", "unrelated")); !strings.Contains(got, "no matching delivery") {
+		t.Fatal("targeted receive did not explain the skipped export:", got)
+	}
 	_, receipts := status()
 	if sends != 2 || len(receipts) != 1 || receipts[0].State != "archived" || receipts[0].Child != "NOTES001" || receipts[0].Parent != "PAPER001" {
 		t.Fatal(receipts, sends)

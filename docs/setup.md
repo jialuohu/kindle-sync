@@ -54,8 +54,21 @@ Gmail grants permission to send and to verify the sender’s email address. Driv
 
 1. Pick a paper with a stored PDF in the reading collection. Run `ks sync --dry-run`, then `ks sync` to record existing papers as a baseline. Later runs send papers when they first appear in the collection tree.
 2. Look up the paper with `ks find "TITLE"` or use its Zotero key. Preview the filename with `ks sync --direction send --item ITEM_KEY --dry-run`, then remove `--dry-run` to send it. If several PDFs qualify, add `--attachment ATTACHMENT_KEY`. To choose the artifact name (e.g., `quill` in `reed26-quill.pdf`), pass `--artifact quill` or set the item’s entry in `artifact_names` for scheduled runs.
-3. Open the paper in your Kindle library, mark a page, and tap **Share → Google Drive → Upload**. In Drive, open the folder the Scribe created and copy its ID from the URL into `drive_folder_id`. Keep this folder for device exports since matching uses the delivery filename. Drive export requires a Scribe released in 2025 or later. [Scribe export instructions](https://digprjsurvey.amazon.com/csad/help/node/TP8wuaQilIlwlITVTL)
+3. Open the paper in your Kindle library, mark a page, and tap **Share → Google Drive → Upload**. In Drive, open the folder the Scribe created and copy its ID from the URL into `drive_folder_id`. Keep the exported filename so Kindle Sync can identify the paper. Other PDFs can share this folder. Drive export requires a Scribe released in 2025 or later. [Scribe export instructions](https://digprjsurvey.amazon.com/csad/help/node/TP8wuaQilIlwlITVTL)
 4. Copy the exported PDF’s file ID from its Drive link and run `ks receive DRIVE_FILE_ID`. Sync Zotero and open the new **Kindle Notes** attachment under the original paper. Check your mark. Receiving the same PDF again should leave a single notes attachment.
+
+## Which exports return to Zotero?
+
+Kindle Sync checks Drive metadata before downloading. The filename must identify one paper submitted to Gmail or confirmed as received. For example, a delivery named `reed26-quill.pdf` also matches `reed26-quill - Kindle.pdf`. Older deliveries can match by their delivery token. An unrelated PDF with the same qualifying name can match too. Give personal documents different names when sharing the folder.
+
+| What happened | What the next sync does |
+| --- | --- |
+| The export has an unknown or ambiguous name | Leaves it in Drive without downloading it or adding it to a matching queue. |
+| You moved the sent paper out of the reading collection | Attaches notes to the paper using its original Zotero item key. |
+| You trashed or permanently deleted the paper | Leaves the export in Drive. |
+| You exported the same paper again | Skips a Drive revision already archived. For a new file or revision, identical PDF bytes reuse the paper's existing attachment. Changed bytes create another **Kindle Notes** attachment. |
+
+When one scan finds several versions, it archives them oldest first by Drive modification time, falling back to creation time. The optional Zotero plugin opens the most recently added notes attachment.
 
 ## Run on a schedule
 
@@ -77,8 +90,8 @@ Run `ks status --json` for delivery states, attachment candidates, Gmail message
 | `submitted` | Gmail accepted the message. Check the Kindle library for delivery. |
 | Uncertain send | Check the device first. Use `ks resolve ITEM_KEY received` to confirm receipt, or `ks resolve ITEM_KEY retry` to allow another send. |
 | Amazon rejected the message | Verify the corresponding Gmail ID in status, run `ks resolve ITEM_KEY rejected GMAIL_ID`, then `ks sync --item ITEM_KEY` to resend. |
-| `manual_upload` | Upload the PDF at `manual_file` with its generated filename. [Send to Kindle](https://www.amazon.com/sendtokindle) |
-| Export needs matching | Run `ks match DRIVE_FILE_ID ITEM_KEY`. For multiple pending versions, use `ks match --version VERSION DRIVE_FILE_ID ITEM_KEY`. |
+| `manual_upload` | Upload the PDF at `manual_file`. To return its notes, use `ks match DRIVE_FILE_ID ITEM_KEY`. [Send to Kindle](https://www.amazon.com/sendtokindle) |
+| You want to attach a specific export manually | Run `ks match DRIVE_FILE_ID ITEM_KEY`. To select a revision cached by an older installation, add `--version VERSION`. |
 
 Each paper gets its own email. The default `email_limit_bytes` is 25,000,000, the personal Gmail attachment limit. Workspace administrators can set a different limit. The CLI also accounts for the encoded message size. Amazon accepts up to 50 MB by email and 200 MB per web upload. [Gmail limits](https://support.google.com/mail/answer/6584?hl=en) · [Kindle email limits](https://digprjsurvey.amazon.com/csad/help/node/G7NECT4B4ZWHQ8WV) · [Web upload limits](https://digprjsurvey.amazon.com/csad/help/node/G5WYD9SAF7PGXRNA)
 

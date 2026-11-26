@@ -85,6 +85,17 @@ type record struct {
 
 var publicationYear = regexp.MustCompile(`\b[1-9][0-9]{3}\b`)
 
+func (r record) deleted() (bool, error) {
+	switch string(r.Data.Deleted) {
+	case "", "false", "0":
+		return false, nil
+	case "true", "1":
+		return true, nil
+	default:
+		return false, errors.New("invalid Zotero deletion status")
+	}
+}
+
 func (r record) paper() model.Paper {
 	p := model.Paper{
 		Key: r.Key, Title: r.Data.Title, ShortTitle: r.Data.ShortTitle,
@@ -110,6 +121,12 @@ func (r record) paper() model.Paper {
 	return p
 }
 
+type httpStatusError int
+
+func (status httpStatusError) Error() string {
+	return fmt.Sprintf("Zotero returned HTTP %d", int(status))
+}
+
 func (c *Client) get(ctx context.Context, address string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
@@ -123,7 +140,7 @@ func (c *Client) get(ctx context.Context, address string) (*http.Response, error
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("Zotero returned HTTP %d", resp.StatusCode)
+		return nil, httpStatusError(resp.StatusCode)
 	}
 	return resp, nil
 }
@@ -133,6 +150,9 @@ func (c *Client) ValidateParent(ctx context.Context, key string) error {
 		return errors.New("invalid Zotero parent key")
 	}
 	resp, err := c.get(ctx, c.base+"/items/"+key)
+	if errors.Is(err, httpStatusError(http.StatusNotFound)) {
+		return model.ErrParentGone
+	}
 	if err != nil {
 		return err
 	}
@@ -148,12 +168,11 @@ func (c *Client) ValidateParent(ctx context.Context, key string) error {
 	case "attachment", "annotation", "note", "":
 		return errors.New("expected a regular Zotero parent item")
 	}
-	switch string(row.Data.Deleted) {
-	case "", "false", "0":
-		return nil
-	default:
-		return errors.New("Zotero parent item is deleted or unreadable")
+	deleted, err := row.deleted()
+	if deleted {
+		return model.ErrParentGone
 	}
+	return err
 }
 
 // Keep all pages of a tree scan at one library revision. A concurrent edit
@@ -171,7 +190,15 @@ func (c *Client) records(ctx context.Context, path string, version *string) ([]r
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, page...)
+		for _, row := range page {
+			deleted, err := row.deleted()
+			if err != nil {
+				return nil, err
+			}
+			if !deleted {
+				records = append(records, row)
+			}
+		}
 		start += len(page)
 		total, err := strconv.Atoi(resp.Header.Get("Total-Results"))
 		if err == nil {

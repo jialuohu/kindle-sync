@@ -165,6 +165,7 @@ func TestSendOutcomeClassification(t *testing.T) {
 }
 
 func TestDriveFolderPaginationAndVerifiedDownload(t *testing.T) {
+	const modified = "2026-01-02T03:04:05Z"
 	pdf := []byte("%PDF-1.7\n")
 	sum := md5.Sum(pdf)
 	digest := hex.EncodeToString(sum[:])
@@ -176,10 +177,13 @@ func TestDriveFolderPaginationAndVerifiedDownload(t *testing.T) {
 			if !strings.Contains(r.URL.Query().Get("q"), "'export-folder' in parents") {
 				t.Error("missing folder restriction")
 			}
+			if !strings.Contains(r.URL.Query().Get("fields"), "modifiedTime") {
+				t.Error("missing export modification time")
+			}
 			if r.URL.Query().Get("pageToken") == "" {
 				io.WriteString(w, `{"nextPageToken":"next","files":[]}`)
 			} else {
-				fmt.Fprintf(w, `{"files":[{"id":"A","name":"mark.pdf","version":"7","md5Checksum":%q}]}`, digest)
+				fmt.Fprintf(w, `{"files":[{"id":"A","name":"mark.pdf","version":"7","md5Checksum":%q,"modifiedTime":%q}]}`, digest, modified)
 			}
 		case "/files/export-folder":
 			io.WriteString(w, `{"mimeType":"application/vnd.google-apps.folder","trashed":false}`)
@@ -203,7 +207,7 @@ func TestDriveFolderPaginationAndVerifiedDownload(t *testing.T) {
 		}
 	})
 	files, err := c.Files(context.Background())
-	if err != nil || len(files) != 1 || files[0].Version != "7" {
+	if err != nil || len(files) != 1 || files[0].Version != "7" || files[0].ModifiedTime != modified {
 		t.Fatalf("list = %+v, %v", files, err)
 	}
 	dst := filepath.Join(t.TempDir(), "download.pdf")

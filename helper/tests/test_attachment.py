@@ -10,6 +10,7 @@ import unittest
 import zipfile
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -60,6 +61,17 @@ class FakeClient:
         self.children_data = list(children or [])
         self.created_payloads: list[dict] = []
         self.create_count = 0
+        self.library_version = 42
+        self.parent_trashed = False
+
+    def items(self, *, itemKey: str, limit: int) -> list[dict]:
+        self.events.append(("items", itemKey))
+        self.request = SimpleNamespace(
+            status_code=200, headers={"Last-Modified-Version": str(self.library_version)}
+        )
+        if itemKey != "PARENT01" or self.parent_trashed or limit != 1:
+            return []
+        return [{"key": itemKey, "version": 3, "data": {"itemType": "journalArticle"}}]
 
     def item(self, key: str) -> dict:
         self.events.append(("item", key))
@@ -81,7 +93,10 @@ class FakeClient:
         self.events.append(("template", item_type, linkmode))
         return {"itemType": item_type, "linkMode": linkmode}
 
-    def create_items(self, payloads: list[dict]) -> dict:
+    def create_items(self, payloads: list[dict], *, last_modified: int) -> dict:
+        if last_modified != self.library_version:
+            self.request = SimpleNamespace(status_code=412)
+            raise RuntimeError("precondition failed")
         self.events.append(("create",))
         self.create_count += 1
         payload = dict(payloads[0])
@@ -228,7 +243,7 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
             names,
             [
                 "preflight",
-                "item",
+                "items",
                 "children",
                 "template",
                 "create",
@@ -291,10 +306,41 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
         self.assertEqual(result["attachment_key"], "ATTACH01")
         self.assertEqual(result["status"], "repaired")
 
+    def test_concurrent_zotero_edit_rechecks_parent_before_creating_child(self) -> None:
+        for trash_parent in (True, False):
+            with self.subTest(trash_parent=trash_parent):
+                client = FakeClient()
+                def edit_during_template(*_args, **_kwargs):
+                    client.library_version += 1
+                    client.parent_trashed = trash_parent
+                    return {}
+
+                def download(_key, directory, name):
+                    path = directory / name
+                    path.write_bytes(self.pdf.read_bytes())
+                    return path
+
+                kwargs = dict(
+                    parent_key="PARENT01", file_path=self.pdf, env=webdav_env(),
+                    client=client, preflight_fn=self.preflight, parser_fn=self.parser,
+                    upload_fn=lambda _key, _file, md5, mtime: (md5, mtime), download_fn=download,
+                )
+                with mock.patch.object(client, "item_template", side_effect=edit_during_template):
+                    with self.assertRaisesRegex(MODULE.IntakeError, "zotero_library_changed"):
+                        MODULE.attach_webdav(**kwargs)
+                self.assertEqual(client.children_data, [])
+                if trash_parent:
+                    with self.assertRaisesRegex(MODULE.IntakeError, "invalid_parent_item"):
+                        MODULE.attach_webdav(**kwargs)
+                    self.assertEqual(client.children_data, [])
+                else:
+                    self.assertEqual(MODULE.attach_webdav(**kwargs)["status"], "created")
+                    self.assertEqual(client.create_count, 1)
+
     def test_webdav_recovers_child_key_when_create_commits_then_times_out(self) -> None:
         class CommitThenTimeoutClient(FakeClient):
-            def create_items(self, payloads: list[dict]) -> dict:
-                super().create_items(payloads)
+            def create_items(self, payloads: list[dict], *, last_modified: int) -> dict:
+                super().create_items(payloads, last_modified=last_modified)
                 raise TimeoutError("response lost after commit")
 
         client = CommitThenTimeoutClient()
@@ -321,7 +367,7 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
 
     def test_create_rejection_never_adopts_concurrent_foreign_child(self) -> None:
         class RejectedCreateClient(FakeClient):
-            def create_items(self, payloads: list[dict]) -> dict:
+            def create_items(self, payloads: list[dict], *, last_modified: int) -> dict:
                 self.create_count += 1
                 self.children_data.append(
                     attachment("ATTACH99", "PARENT01", "paper.pdf", md5="0" * 32)
@@ -345,7 +391,7 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
 
     def test_lost_create_response_requires_our_correlation_marker(self) -> None:
         class ForeignCommitClient(FakeClient):
-            def create_items(self, payloads: list[dict]) -> dict:
+            def create_items(self, payloads: list[dict], *, last_modified: int) -> dict:
                 self.create_count += 1
                 self.children_data.append(attachment("ATTACH99", "PARENT01", "paper.pdf"))
                 raise TimeoutError("our response was lost while another host created a child")
@@ -779,8 +825,8 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
 
     def test_official_storage_rejects_concurrent_same_name_child_after_create(self) -> None:
         class ConcurrentClient(FakeClient):
-            def create_items(self, payloads: list[dict]) -> dict:
-                result = super().create_items(payloads)
+            def create_items(self, payloads: list[dict], *, last_modified: int) -> dict:
+                result = super().create_items(payloads, last_modified=last_modified)
                 self.children_data.append(attachment("ATTACH99", "PARENT01", "paper.pdf"))
                 return result
 
@@ -801,8 +847,8 @@ class PaperLibraryAttachmentTests(unittest.TestCase):
 
     def test_official_storage_recovers_child_key_when_create_commits_then_times_out(self) -> None:
         class CommitThenTimeoutClient(FakeClient):
-            def create_items(self, payloads: list[dict]) -> dict:
-                super().create_items(payloads)
+            def create_items(self, payloads: list[dict], *, last_modified: int) -> dict:
+                super().create_items(payloads, last_modified=last_modified)
                 raise TimeoutError("response lost after commit")
 
         client = CommitThenTimeoutClient()

@@ -51,8 +51,8 @@ const usage = `kindle-sync [--config PATH] COMMAND [--json]
   resolve ITEM received|retry       Resolve an uncertain send after checking the device
   resolve ITEM rejected GMAIL_ID    Queue a retry after Amazon rejected that submission
   status                            Show the local queue and Drive receipts
-  receive DRIVE_FILE_ID             Match one current export to its recorded delivery
-  match DRIVE_FILE_ID ITEM          Archive a returned PDF under the specified paper
+  receive DRIVE_FILE_ID             Retrieve one export if it matches a recorded delivery
+  match [--version N] DRIVE_ID ITEM Manually attach an export to the specified Zotero paper
 
 Config defaults to KINDLE_SYNC_CONFIG or /etc/kindle-sync/config.json.
 Secrets are loaded from CODEX_SECRETS_DIR. Agent command results are JSON.

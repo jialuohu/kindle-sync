@@ -9,6 +9,7 @@ import (
 var ErrUncertain = errors.New("mail submission outcome is unknown")
 var ErrTooLarge = errors.New("PDF exceeds the supported size limit")
 var ErrSendRejected = errors.New("mail submission was rejected")
+var ErrParentGone = errors.New("Zotero parent item is in the trash or no longer exists")
 
 type Paper struct {
 	Key         string `json:"key"`
@@ -24,11 +25,12 @@ type Attachment struct {
 	MD5  string `json:"md5,omitempty"`
 }
 type DriveFile struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	MD5         string `json:"md5,omitempty"`
-	CreatedTime string `json:"created_time,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	MD5          string `json:"md5,omitempty"`
+	CreatedTime  string `json:"created_time,omitempty"`
+	ModifiedTime string `json:"modified_time,omitempty"`
 }
 type Zotero interface {
 	ValidateParent(context.Context, string) error

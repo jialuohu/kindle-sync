@@ -14,7 +14,7 @@ Run every command against the deployment that owns the queue. Use the executable
 | Send new papers | `sync --direction send --json` |
 | Send one paper | Identify the Zotero parent, then `sync --direction send --item ITEM_KEY --json`. |
 | Bring my notes back | `sync --direction receive --json` |
-| Receive this Drive PDF | `receive DRIVE_FILE_ID --json`. Use the ID from the supplied file link. |
+| Receive this Drive PDF | `receive DRIVE_FILE_ID --json`. Use the ID from the supplied file link. If it skips the file, report the result. |
 | Check a delivery or earlier export | `status --json`. Filter jobs or receipts to the user's request. |
 
 For a title, short title, system name, Zotero item link or key, pass the supplied text as a single argument to `find "QUERY" --json`. It searches the current reading collection and its descendants. Use the key in `matches` when exactly one paper matches. For multiple matches, show titles, first authors and years and ask the user to choose. If none match, report that and leave the library alone. If several source PDFs qualify, show their names and use the chosen `--attachment KEY`.
@@ -24,6 +24,6 @@ Read the JSON and the exit status. A run can submit some papers or save some not
 - `submitted` means Gmail accepted the email. Only report device receipt on user confirmation or a corresponding `confirmed_received` record.
 - `uncertain` can mean the email was sent. Check the device with the user before authorizing a retry. A confirmed Amazon rejection requires the matching Gmail message ID.
 - `manual_upload` gives the prepared PDF path. On Compose, it is inside the container. To give the user a local file for upload, use the deployment's `docker compose cp` to copy it to a private host directory with the same filename.
-- `needs_match` requires the intended Zotero parent before calling `match`. Use `--version` when the user is matching a specific cached export revision.
+- Automatic receipt requires a unique match to a submitted or confirmed delivery and a live Zotero parent, even if the paper moved out of the reading collection. Leave unrelated and ambiguous PDFs in Drive. Use `match DRIVE_FILE_ID ITEM_KEY` only when the user requests that specific pairing. Add `--version VERSION` to select an older cached revision.
 
 Use `--backfill` only for a request to send historical members of a collection. Full sync, backfill and live sends are separate from a request to inspect or preview. For installation or a missing deployment, see the [deployment skill](../kindle-sync-deploy/SKILL.md).
