@@ -96,13 +96,13 @@ dc stop sync &&
 dc run --rm -T --no-deps sync kindle-sync status --json &&
 dc run --rm -T --no-deps sync kindle-sync sync --direction send --dry-run --json &&
 dc run --rm -T --no-deps sync kindle-sync sync --direction receive --dry-run --json &&
-dc up -d --no-build sync
+dc up -d --no-build --force-recreate sync
 ```
 
 Observe two completed rounds again. If the upgrade fails after the old service stops, set `KINDLE_SYNC_IMAGE` to the value of `$backup_tag` in the private `compose.env`, then recreate the service with the same project and volume.
 
 ```sh
-dc up -d --no-build sync
+dc up -d --no-build --force-recreate sync
 ```
 
 Retain the rollback tag in the private Compose environment until you next upgrade. Keep the current data volume when reverting the application. A database backup made before a Gmail submission lacks its delivery record and can cause a duplicate send.
