@@ -63,6 +63,8 @@ The filename combines the first author's surname, the last two digits of the yea
 
 When no publication year can be established, Kindle Sync uses the year the item was added to Zotero for the filename. If that is also missing, it uses `nd` (no date). A preview reads metadata only, so the PDF can refine a provisional filename at send time. Zotero's Date field is untouched. Already sent papers keep their recorded filenames so their notes still match.
 
+To send one paper again after correcting its filename, run `ks sync --item ITEM_KEY --resend-as reed26-quill.pdf`. The name must match the one Kindle Sync calculates. Repeating the command skips an existing delivery. Notes exported under either name still return to that paper. The old copy stays in your Kindle library until you remove it.
+
 ## Which exports return to Zotero?
 
 Kindle Sync checks Drive metadata before downloading. The filename must identify one paper submitted to Gmail or confirmed as received. For example, a delivery named `reed26-quill.pdf` also matches `reed26-quill - Kindle.pdf`. Older deliveries can match by their delivery token. An unrelated PDF with the same qualifying name can match too. Give personal documents different names when sharing the folder.

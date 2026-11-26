@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"unicode"
 
 	"kindle-sync/internal/engine"
 	"kindle-sync/internal/googleio"
@@ -48,6 +49,8 @@ const usage = `kindle-sync [--config PATH] COMMAND [--json]
   sync --backfill COLLECTION        Send pending and historical papers in this collection only
   sync --item ITEM [--attachment KEY] [--artifact NAME]
                                     Send one paper; optionally choose its PDF or artifact name
+  sync --item ITEM --resend-as EXPECTED.pdf
+                                    Reissue a sent paper once under its corrected filename
   resolve ITEM received|retry       Resolve an uncertain send after checking the device
   resolve ITEM rejected GMAIL_ID    Queue a retry after Amazon rejected that submission
   status                            Show the local queue and Drive receipts
@@ -137,6 +140,7 @@ func parseOptions(args []string, c config) (model.Options, error) {
 		f.StringVar(&o.Item, "item", "", "")
 		f.StringVar(&o.Attachment, "attachment", "", "")
 		f.StringVar(&o.Artifact, "artifact", "", "")
+		f.StringVar(&o.ExpectedResendName, "resend-as", "", "")
 		f.StringVar(&o.Backfill, "backfill", "", "")
 	}
 	if args[0] == "match" {
@@ -172,6 +176,14 @@ func parseOptions(args []string, c config) (model.Options, error) {
 	}
 	if o.Item != "" && o.Backfill != "" {
 		return o, errors.New("choose --item or --backfill for this run")
+	}
+	if name := o.ExpectedResendName; name != "" {
+		if o.Item == "" || o.Attachment != "" || o.Artifact != "" {
+			return o, errors.New("--resend-as requires a single --item with its original attachment")
+		}
+		if !strings.HasSuffix(name, ".pdf") || name == ".pdf" || strings.ContainsAny(name, `/\`) || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+			return o, errors.New("--resend-as requires the expected PDF filename")
+		}
 	}
 	switch o.SyncDirection() {
 	case "send":

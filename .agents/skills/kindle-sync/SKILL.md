@@ -13,6 +13,7 @@ Run every command against the deployment that owns the queue. Use the executable
 | Preview what will sync | `sync --dry-run --json`. Keep any direction or item restriction the user supplied. |
 | Send new papers | `sync --direction send --json` |
 | Send one paper | Identify the Zotero parent, then `sync --direction send --item ITEM_KEY --json`. |
+| Resend one paper under a corrected filename | `sync --item ITEM_KEY --resend-as EXPECTED.pdf --json`. Use the exact requested filename. Add `--dry-run` to preview. |
 | Bring my notes back | `sync --direction receive --json` |
 | Receive this Drive PDF | `receive DRIVE_FILE_ID --json`. Use the ID from the supplied file link. If it skips the file, report the result. |
 | Check a delivery or earlier export | `status --json`. Filter jobs or receipts to the user's request. |

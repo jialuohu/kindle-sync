@@ -51,8 +51,12 @@ func (r *round) allocateName(p model.Paper, artifact string) (string, error) {
 	}
 	reserved := map[string]bool{}
 	for _, job := range r.jobs {
-		if job.Key != p.Key && job.OutboundName != "" {
-			reserved[foldedName(job.OutboundName)] = true
+		if job.Key == p.Key {
+			continue
+		}
+		reserved[foldedName(job.OutboundName)] = true
+		for _, sent := range job.PreviousDeliveries {
+			reserved[foldedName(sent.OutboundName)] = true
 		}
 	}
 	// Honor names already pinned to other parents or held by older releases.
@@ -85,48 +89,70 @@ func (m parentIndex) add(id, parent string) {
 
 func (r *round) deliveryParents() parentIndex {
 	parents := parentIndex{}
-	for _, job := range r.jobs {
-		if job.Token != "" {
-			parents.add(job.Token, job.Key)
+	add := func(parent string, d model.Delivery) {
+		if d.Token != "" {
+			parents.add(d.Token, parent)
 		}
-		if job.OutboundName != "" {
-			parents.add(foldedName(job.OutboundName), job.Key)
+		if d.OutboundName != "" {
+			parents.add(foldedName(d.OutboundName), parent)
+		}
+	}
+	for _, job := range r.jobs {
+		add(job.Key, job.CurrentDelivery())
+		for _, sent := range job.PreviousDeliveries {
+			add(job.Key, sent)
 		}
 	}
 	return parents
 }
 
 func (m parentIndex) delivery(file model.DriveFile, jobs map[string]model.Job) string {
-	key, known := m[returnedName(file.Name)]
+	name := returnedName(file.Name)
+	key, known := m[name]
+	if !known {
+		name = "" // A legacy token can identify a renamed file.
+	}
 	// Older exports may include extra words or turn spaces into underscores
 	// around the original KRS token.
 	tokens := tokenPattern.FindAllString(strings.ReplaceAll(strings.ToUpper(file.Name), "_", " "), -1)
 	if len(tokens) > 1 {
 		return ""
 	}
+	token := ""
 	if len(tokens) == 1 {
 		if legacy, ok := m[tokens[0]]; ok {
 			if known && key != legacy {
 				return ""
 			}
-			key = legacy
+			key, token = legacy, tokens[0]
 		}
+	}
+	if key == "" {
+		return ""
 	}
 	j := jobs[key]
-	if j.State != "submitted" && j.State != "confirmed_received" {
-		return ""
+	created, _ := time.Parse(time.RFC3339Nano, file.CreatedTime)
+	matches := func(d model.Delivery) bool {
+		if d.State != "submitted" && d.State != "confirmed_received" {
+			return false
+		}
+		if name != "" && foldedName(d.OutboundName) != name || token != "" && token != d.Token {
+			return false
+		}
+		if d.NamedAt == "" {
+			// Older deliveries used a random token instead of a timestamp.
+			return token != ""
+		}
+		named, err := time.Parse(time.RFC3339Nano, d.NamedAt)
+		return err == nil && !created.IsZero() && created.After(named)
 	}
-	if j.NamedAt == "" {
-		// Older deliveries used a random token instead of a timestamp.
-		if len(tokens) == 1 && tokens[0] == j.Token {
+	if matches(j.CurrentDelivery()) {
+		return key
+	}
+	for _, sent := range j.PreviousDeliveries {
+		if matches(sent) {
 			return key
 		}
-		return ""
-	}
-	named, e1 := time.Parse(time.RFC3339Nano, j.NamedAt)
-	created, e2 := time.Parse(time.RFC3339Nano, file.CreatedTime)
-	if e1 == nil && e2 == nil && created.After(named) {
-		return key
 	}
 	return ""
 }

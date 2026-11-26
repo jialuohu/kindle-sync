@@ -46,6 +46,9 @@ func Run(ctx context.Context, store model.Store, library model.Zotero, google mo
 		r.receipts[revision{rec.ID, rec.Version}] = rec
 	}
 	direction := options.SyncDirection()
+	if options.ExpectedResendName != "" && (options.Item == "" || direction != "send" || options.Backfill != "" || options.Attachment != "" || options.Artifact != "" || options.ReturnFile != "" || options.MatchParent != "" || options.MatchVersion != "") {
+		return r.report, errors.New("resending requires one item, the send direction, and no overrides")
+	}
 	if direction != "receive" {
 		if err := r.outbound(ctx); err != nil {
 			return r.report, err
@@ -97,6 +100,9 @@ func (r *round) outbound(ctx context.Context) error {
 		}
 		r.report.Problems = append(r.report.Problems, "reading Zotero collection: "+err.Error())
 		return nil // Continue Drive intake, but never send from a stale membership snapshot.
+	}
+	if r.options.ExpectedResendName != "" {
+		return r.resend(ctx, members)
 	}
 	selected, err := r.selection(ctx, members)
 	if err != nil {
@@ -297,15 +303,11 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "paper.pdf")
-	pdfYear, err := r.library.Download(ctx, source, path)
+	pdfYear, hash, size, err := r.downloadPDF(ctx, source, path)
 	if err != nil {
 		if errors.Is(err, model.ErrTooLarge) {
 			return r.problem(j, "too_large", err)
 		}
-		return r.problem(j, "waiting_pdf", err)
-	}
-	hash, size, err := pdfInfo(path, source.MD5)
-	if err != nil {
 		return r.problem(j, "waiting_pdf", err)
 	}
 	name, _, err := r.deliveryName(ctx, &j, pdfYear)
@@ -337,6 +339,20 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 		r.report.Actions = append(r.report.Actions, "manual upload: "+j.Key+" "+j.ManualFile)
 		return r.saveJob(j)
 	}
+	return r.submit(ctx, j, path, nil)
+}
+
+// Download and verify the exact source bytes used for email and filename resolution.
+func (r *round) downloadPDF(ctx context.Context, source model.Attachment, path string) (year, hash string, size int64, err error) {
+	year, err = r.library.Download(ctx, source, path)
+	if err != nil {
+		return "", "", 0, err
+	}
+	hash, size, err = pdfInfo(path, source.MD5)
+	return year, hash, size, err
+}
+
+func (r *round) submit(ctx context.Context, j model.Job, path string, previous *model.Job) error {
 	j.State = "sending"
 	if err := r.saveJob(j); err != nil {
 		return err
@@ -344,6 +360,10 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	id, err := r.google.Send(ctx, path, j.OutboundName)
 	if err != nil {
 		if errors.Is(err, model.ErrSendRejected) {
+			if previous != nil {
+				r.report.Problems = append(r.report.Problems, j.Key+": "+err.Error())
+				return r.saveJob(*previous)
+			}
 			return r.problem(j, "queued", err)
 		}
 		return r.problem(j, "uncertain", err)

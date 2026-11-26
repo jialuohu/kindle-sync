@@ -344,6 +344,12 @@ func TestRejectIncompatibleOrEmptySelectors(t *testing.T) {
 		{"sync", "--backfill", ""},
 		{"sync", "--direction", "both", "--item", "PAPER001"},
 		{"sync", "--direction", "receive", "--backfill", "READ0001"},
+		{"sync", "--resend-as", "reed26-quill.pdf"},
+		{"sync", "--item", "PAPER001", "--resend-as", ""},
+		{"sync", "--item", "PAPER001", "--resend-as", "../reed26-quill.pdf"},
+		{"sync", "--item", "PAPER001", "--resend-as", "reed26-quill.pdf", "--artifact", "Quill"},
+		{"sync", "--item", "PAPER001", "--resend-as", "reed26-quill.pdf", "--attachment", "ORIG0001"},
+		{"sync", "--item", "PAPER001", "--resend-as", "reed26-quill.pdf", "--direction", "both"},
 	} {
 		if _, err := parseOptions(args, config{Folder: "folder"}); err == nil {
 			t.Errorf("accepted invalid sync arguments %q", args)
@@ -351,5 +357,9 @@ func TestRejectIncompatibleOrEmptySelectors(t *testing.T) {
 	}
 	if _, err := parseOptions([]string{"sync", "--direction", "receive"}, config{}); err == nil {
 		t.Fatal("accepted receive-only sync with no folder")
+	}
+	o, err := parseOptions([]string{"sync", "--item", "PAPER001", "--resend-as", "reed26-quill.pdf", "--dry-run"}, config{})
+	if err != nil || o.SyncDirection() != "send" || o.ExpectedResendName != "reed26-quill.pdf" || !o.DryRun {
+		t.Fatal("could not preview a single renamed delivery", o, err)
 	}
 }

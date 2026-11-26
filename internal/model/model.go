@@ -49,21 +49,37 @@ type Google interface {
 	Files(context.Context) ([]DriveFile, error)
 	Download(context.Context, DriveFile, string) error
 }
+
+// Delivery identifies one Kindle copy and the submission that produced it.
+type Delivery struct {
+	OutboundName string `json:"outbound_name,omitempty"`
+	Token        string `json:"token,omitempty"`
+	NamedAt      string `json:"named_at,omitempty"`
+	GmailID      string `json:"gmail_id,omitempty"`
+	State        string `json:"state"`
+}
+
 type Job struct {
 	Paper
-	State            string       `json:"state"`
-	Token            string       `json:"token,omitempty"`
-	OutboundName     string       `json:"outbound_name,omitempty"`
-	ArtifactOverride string       `json:"artifact_override,omitempty"` // Explicit label retained while waiting for the first PDF.
-	NamedAt          string       `json:"named_at,omitempty"`
-	Source           string       `json:"source,omitempty"` // attachment key
-	SourceHash       string       `json:"source_hash,omitempty"`
-	Candidates       []Attachment `json:"candidates,omitempty"`
-	GmailID          string       `json:"gmail_id,omitempty"`
-	RejectedGmailIDs []string     `json:"rejected_gmail_ids,omitempty"`
-	ManualFile       string       `json:"manual_file,omitempty"`
-	Error            string       `json:"error,omitempty"`
+	State              string       `json:"state"`
+	Token              string       `json:"token,omitempty"`
+	OutboundName       string       `json:"outbound_name,omitempty"`
+	ArtifactOverride   string       `json:"artifact_override,omitempty"` // Explicit label retained while waiting for the first PDF.
+	NamedAt            string       `json:"named_at,omitempty"`
+	Source             string       `json:"source,omitempty"` // attachment key
+	SourceHash         string       `json:"source_hash,omitempty"`
+	Candidates         []Attachment `json:"candidates,omitempty"`
+	GmailID            string       `json:"gmail_id,omitempty"`
+	RejectedGmailIDs   []string     `json:"rejected_gmail_ids,omitempty"`
+	PreviousDeliveries []Delivery   `json:"previous_deliveries,omitempty"`
+	ManualFile         string       `json:"manual_file,omitempty"`
+	Error              string       `json:"error,omitempty"`
 }
+
+func (j Job) CurrentDelivery() Delivery {
+	return Delivery{OutboundName: j.OutboundName, Token: j.Token, NamedAt: j.NamedAt, GmailID: j.GmailID, State: j.State}
+}
+
 type Receipt struct {
 	DriveFile
 	Parent         string `json:"parent,omitempty"`
@@ -84,6 +100,7 @@ type Store interface {
 type Options struct {
 	Root, Backfill, Item, Attachment, ReturnFile, MatchParent, MatchVersion, Spool string
 	Direction, Artifact                                                            string
+	ExpectedResendName                                                             string
 	ArtifactNames                                                                  map[string]string
 	MaxEmailBytes                                                                  int64
 	DryRun, SkipReturns                                                            bool
