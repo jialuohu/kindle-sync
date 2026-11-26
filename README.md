@@ -4,10 +4,10 @@ Read papers from Zotero on a Kindle Scribe and save your handwritten notes back 
 
 ## Use with an agent
 
-Open this repository in Codex. Ask in plain language or type `$` to select a skill.
+Any agent that can read this checkout and run commands on the deployment host can follow these skills. Ask for the skill by name if your agent discovers it automatically, or copy one of these prompts.
 
-- **[$kindle-sync-deploy](.agents/skills/kindle-sync-deploy/SKILL.md)** installs or upgrades the scheduled service. Try “Deploy Kindle Sync on this Mac.”
-- **[$kindle-sync](.agents/skills/kindle-sync/SKILL.md)** sends papers, receives notes, and checks the queue. Try “Preview my Kindle sync,” “Send the unsent papers in ReadLater,” or “Bring back my Kindle notes.”
+- **[Deploy or upgrade](.agents/skills/kindle-sync-deploy/SKILL.md)** — “Read `.agents/skills/kindle-sync-deploy/SKILL.md` and deploy Kindle Sync on this Mac.”
+- **[Sync papers and notes](.agents/skills/kindle-sync/SKILL.md)** — “Read `.agents/skills/kindle-sync/SKILL.md` and preview what would sync.” You can also ask it to send unsent papers in ReadLater or bring back your Kindle notes.
 
 The first scan records papers already in the collection. Ask the agent to send those papers when you are ready. Papers added later go out automatically every five minutes while the service is running.
 
