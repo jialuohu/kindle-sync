@@ -3,9 +3,7 @@ package engine
 import (
 	"bytes"
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -22,15 +20,8 @@ const webLimit = 200_000_000
 var tokenPattern = regexp.MustCompile(`(?i)\bKRS-[A-Z2-7]{16}\b`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func newToken() (string, error) {
-	var raw [10]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	return "KRS-" + base32.StdEncoding.EncodeToString(raw[:]), nil
-}
-
-func filename(token, title string) string {
+// Preserve the filename of deliveries created by token-based versions on retry.
+func legacyFilename(token, title string) string {
 	title = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || strings.ContainsRune(`/\:"*?<>|`, r) {
 			return ' '

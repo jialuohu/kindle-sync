@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"kindle-sync/internal/model"
 )
@@ -100,10 +101,23 @@ func (r *round) outbound(ctx context.Context) error {
 		r.report.Actions = append(r.report.Actions, fmt.Sprintf("baseline: %d papers", len(members)))
 	} else {
 		for _, p := range members {
-			if _, ok := r.jobs[p.Key]; !ok {
-				if err := r.saveJob(model.Job{Paper: p, State: "queued"}); err != nil {
-					return err
+			j, ok := r.jobs[p.Key]
+			if !ok {
+				j = model.Job{Paper: p, State: "queued"}
+			} else {
+				switch j.State {
+				case "queued", "waiting_pdf", "needs_source", "baseline":
+				default:
+					continue
 				}
+				if j.Token != "" || j.SourceHash != "" || j.Paper == p {
+					continue
+				}
+				// Includes jobs stored before author and date were collected.
+				j.Paper = p
+			}
+			if err := r.saveJob(j); err != nil {
+				return err
 			}
 		}
 	}
@@ -111,16 +125,17 @@ func (r *round) outbound(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("cannot backfill without a complete reading queue: %w", err)
 		}
-		eligible := make(map[string]bool, len(members))
+		eligible := make(map[string]model.Paper, len(members))
 		for _, paper := range members {
-			eligible[paper.Key] = true
+			eligible[paper.Key] = paper
 		}
 		members, err := r.library.Members(ctx, r.options.Backfill)
 		if err != nil {
 			return err
 		}
-		for _, p := range members {
-			if !eligible[p.Key] {
+		for _, member := range members {
+			p, inScope := eligible[member.Key]
+			if !inScope {
 				continue
 			}
 			j, ok := r.jobs[p.Key]
@@ -138,7 +153,23 @@ func (r *round) outbound(ctx context.Context) error {
 		}
 		switch j.State {
 		case "queued", "waiting_pdf", "needs_source", "baseline":
-			j.Source, j.State, j.Error = r.options.Attachment, "queued", ""
+			if r.options.Artifact != "" {
+				if j.Token != "" {
+					return errors.New("retry uses the original delivery token and filename")
+				}
+				name, err := r.allocateName(j.Paper, r.options.Artifact)
+				if err != nil {
+					return err
+				}
+				if j.SourceHash != "" && j.OutboundName != name {
+					return fmt.Errorf("retry uses the original filename %s", j.OutboundName)
+				}
+				j.OutboundName = name
+			}
+			if r.options.Attachment != "" {
+				j.Source = r.options.Attachment
+			}
+			j.State, j.Error = "queued", ""
 			if err := r.saveJob(j); err != nil {
 				return err
 			}
@@ -209,8 +240,21 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 			return r.problem(j, "needs_source", errors.New("choose one of the candidate PDFs"))
 		}
 	}
+	name := j.OutboundName
+	if name == "" {
+		if j.Token != "" {
+			name = legacyFilename(j.Token, j.Title)
+		} else {
+			name, err = r.allocateName(j.Paper, r.options.ArtifactNames[j.Key])
+			if err != nil {
+				return err
+			}
+		}
+	}
 	if r.options.DryRun {
-		r.report.Actions = append(r.report.Actions, fmt.Sprintf("would prepare %s from attachment %s", j.Key, source.Key))
+		j.OutboundName = name
+		r.jobs[j.Key] = j // Reserve the preview name for the remaining items in this round.
+		r.report.Actions = append(r.report.Actions, fmt.Sprintf("would prepare %s from attachment %s as %s", j.Key, source.Key, j.OutboundName))
 		return nil
 	}
 	dir, err := tempDir(r.options.Spool)
@@ -229,17 +273,21 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	if err != nil {
 		return r.problem(j, "waiting_pdf", err)
 	}
-	if j.Token == "" {
-		j.Token, err = newToken()
-		if err != nil {
+	j.Source, j.SourceHash, j.Error, j.Candidates = source.Key, hash, "", nil
+	j.OutboundName = name
+	if j.NamedAt == "" && j.Token == "" {
+		// Drive exposes millisecond creation times. An older, unrelated PDF
+		// can already exist in the bound folder on our very first scan.
+		j.NamedAt = time.Now().UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
+	}
+	if size > r.options.MaxEmailBytes {
+		// Reserve the name before publishing the file so an interrupted run
+		// cannot assign it to a different paper on the next scan.
+		if err := r.saveJob(j); err != nil {
 			return err
 		}
-	}
-	j.Source, j.SourceHash, j.Error, j.Candidates = source.Key, hash, "", nil
-	name := filename(j.Token, j.Title)
-	if size > r.options.MaxEmailBytes {
 		j.State = "manual_upload"
-		j.ManualFile = filepath.Join(r.options.Spool, "manual", name)
+		j.ManualFile = filepath.Join(r.options.Spool, "manual", j.OutboundName)
 		if err := keepFile(path, j.ManualFile); err != nil {
 			return err
 		}
@@ -253,7 +301,7 @@ func (r *round) deliver(ctx context.Context, j model.Job) error {
 	if err := r.saveJob(j); err != nil {
 		return err
 	}
-	id, err := r.google.Send(ctx, path, name)
+	id, err := r.google.Send(ctx, path, j.OutboundName)
 	if err != nil {
 		if errors.Is(err, model.ErrSendRejected) {
 			return r.problem(j, "queued", err)

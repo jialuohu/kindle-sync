@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"kindle-sync/internal/model"
+	"kindle-sync/internal/naming"
 )
 
 type Config struct {
@@ -54,17 +55,55 @@ func New(c Config) (*Client, error) {
 
 type record struct {
 	Key  string `json:"key"`
+	Meta struct {
+		ParsedDate string `json:"parsedDate"`
+	} `json:"meta"`
 	Data struct {
-		Key         string          `json:"key"`
-		Deleted     json.RawMessage `json:"deleted"`
-		Title       string          `json:"title"`
-		ItemType    string          `json:"itemType"`
-		LinkMode    string          `json:"linkMode"`
-		ContentType string          `json:"contentType"`
-		Filename    string          `json:"filename"`
-		MD5         string          `json:"md5"`
-		Parent      string          `json:"parentItem"`
+		Key        string          `json:"key"`
+		Deleted    json.RawMessage `json:"deleted"`
+		Title      string          `json:"title"`
+		ShortTitle string          `json:"shortTitle"`
+		Date       string          `json:"date"`
+		Abstract   string          `json:"abstractNote"`
+		Creators   []struct {
+			Type     string `json:"creatorType"`
+			LastName string `json:"lastName"`
+			Name     string `json:"name"` // Zotero's single-field (organization) creator.
+		} `json:"creators"`
+		ItemType    string `json:"itemType"`
+		LinkMode    string `json:"linkMode"`
+		ContentType string `json:"contentType"`
+		Filename    string `json:"filename"`
+		MD5         string `json:"md5"`
+		Parent      string `json:"parentItem"`
 	} `json:"data"`
+}
+
+var publicationYear = regexp.MustCompile(`\b[1-9][0-9]{3}\b`)
+
+func (r record) paper() model.Paper {
+	p := model.Paper{
+		Key: r.Key, Title: r.Data.Title, ShortTitle: r.Data.ShortTitle,
+		Artifact: naming.AbstractArtifact(r.Data.Abstract),
+	}
+	for _, c := range r.Data.Creators {
+		if c.Type == "author" {
+			p.FirstAuthor = strings.TrimSpace(c.LastName)
+			if p.FirstAuthor == "" {
+				p.FirstAuthor = strings.TrimSpace(c.Name)
+			}
+			break
+		}
+	}
+	p.Year = publicationYear.FindString(r.Meta.ParsedDate)
+	if p.Year == "" {
+		// Older data may only expose a display date. An ambiguous date range
+		// supplies no single publication year. Never use dateAdded or dateModified.
+		if years := publicationYear.FindAllString(r.Data.Date, 2); len(years) == 1 {
+			p.Year = years[0]
+		}
+	}
+	return p
 }
 
 func (c *Client) get(ctx context.Context, address string) (*http.Response, error) {
@@ -195,7 +234,7 @@ func (c *Client) Members(ctx context.Context, root string) ([]model.Paper, error
 			case "":
 				return nil, errors.New("missing Zotero item type")
 			}
-			items[row.Key] = model.Paper{Key: row.Key, Title: row.Data.Title}
+			items[row.Key] = row.paper()
 		}
 		children, err := c.records(ctx, prefix+"/collections", &revision)
 		if err != nil {

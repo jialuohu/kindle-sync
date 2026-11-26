@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 
 	"kindle-sync/internal/model"
 )
@@ -21,6 +20,7 @@ func (r *round) inbound(ctx context.Context) error {
 		r.report.Problems = append(r.report.Problems, "listing Drive exports: "+err.Error())
 	}
 	current := make(map[revision]bool)
+	newlyListed := make(map[revision]bool)
 	listedVersions := make(map[string]string)
 	listComplete := err == nil
 	for _, f := range files {
@@ -37,6 +37,7 @@ func (r *round) inbound(ctx context.Context) error {
 		current[key] = true
 		listedVersions[f.ID] = f.Version
 		if _, ok := r.receipts[key]; !ok {
+			newlyListed[key] = true
 			r.receipts[key] = model.Receipt{DriveFile: f, State: "pending"}
 		}
 	}
@@ -58,12 +59,7 @@ func (r *round) inbound(ctx context.Context) error {
 			target = revision{r.options.ReturnFile, version}
 		}
 	}
-	tokenParents := map[string]string{}
-	for _, j := range r.jobs {
-		if j.Token != "" {
-			tokenParents[j.Token] = j.Key
-		}
-	}
+	parents := r.deliveryParents()
 	work := make([]revision, 0)
 	for k, rec := range r.receipts {
 		if r.options.ReturnFile != "" && k != target {
@@ -107,12 +103,11 @@ func (r *round) inbound(ctx context.Context) error {
 			return err
 		}
 		x := r.receipts[k]
-		if x.Parent == "" {
-			// Exporters may normalize spaces in the document title to underscores.
-			name := strings.ReplaceAll(strings.ToUpper(x.Name), "_", " ")
-			tokens := tokenPattern.FindAllString(name, -1)
-			if len(tokens) == 1 {
-				x.Parent = tokenParents[tokens[0]]
+		// A later delivery with the same short name cannot claim a previously
+		// unmatched export. The first observation stores the match decision.
+		if x.Parent == "" && newlyListed[k] {
+			if key := parents.lookup(x.Name); key != "" && canBeExport(r.jobs[key], x.DriveFile) {
+				x.Parent = key
 			}
 		}
 		if r.options.MatchParent != "" {
@@ -195,7 +190,7 @@ func (r *round) receive(ctx context.Context, x model.Receipt, current bool) erro
 		return r.receiptProblem(x, err)
 	}
 	if x.Parent == "" {
-		x.State, x.Error = "needs_match", "no uniquely recognized delivery code"
+		x.State, x.Error = "needs_match", "export does not identify a unique delivery"
 		r.report.Actions = append(r.report.Actions, "needs match: "+x.ID)
 		return r.saveReceipt(x)
 	}

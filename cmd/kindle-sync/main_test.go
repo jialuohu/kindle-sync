@@ -73,7 +73,7 @@ elif sys.argv[1] == 'attach':
 	var exportName string
 	returned := []byte("%PDF-1.4\nhandwritten")
 	export := func() map[string]any {
-		return map[string]any{"id": "export", "name": exportName, "parents": []string{"folder"}, "mimeType": "application/pdf", "size": strconv.Itoa(len(returned)), "md5Checksum": fmt.Sprintf("%x", md5.Sum(returned)), "version": "1"}
+		return map[string]any{"id": "export", "name": exportName, "parents": []string{"folder"}, "createdTime": time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano), "mimeType": "application/pdf", "size": strconv.Itoa(len(returned)), "md5Checksum": fmt.Sprintf("%x", md5.Sum(returned)), "version": "1"}
 	}
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
@@ -84,13 +84,17 @@ elif sys.argv[1] == 'attach':
 		case strings.HasSuffix(path, "/READ0001/items/top"):
 			body = []byte("[]")
 			if havePaper {
-				body = []byte(`[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"Shared title"}}]`)
+				body = []byte(`[{"key":"PAPER001","data":{"itemType":"journalArticle","title":"Indexing library records","creators":[{"creatorType":"author","lastName":"Reed","firstName":"A."}],"date":"2026"}}]`)
 			}
 		case strings.HasSuffix(path, "/READ0001/collections"):
 			body = []byte("[]")
 		case strings.HasSuffix(path, "/PAPER001/children"):
 			body = []byte(`[{"key":"FILE0001","data":{"itemType":"attachment","parentItem":"PAPER001","linkMode":"imported_url","contentType":"application/pdf","filename":"original.pdf"}}]`)
 		case strings.HasSuffix(path, "/messages/send"):
+			sent, err := io.ReadAll(r.Body)
+			if err != nil || !bytes.Contains(sent, []byte("filename=reed26-quill.pdf")) {
+				t.Error("outgoing Gmail MIME did not name the attachment reed26-quill.pdf")
+			}
 			sends++
 			body = encode(map[string]string{"id": fmt.Sprintf("gmail-%d", sends)})
 		case strings.HasSuffix(path, "/files/folder"):
@@ -121,7 +125,10 @@ elif sys.argv[1] == 'attach':
 	}
 	invoke("sync")
 	havePaper = true
-	invoke("sync")
+	if got := string(invoke("sync", "--dry-run", "--item", "PAPER001", "--artifact", "Quill")); !strings.Contains(got, "reed26-quill.pdf") {
+		t.Fatal("preview omitted the requested filename:", got)
+	}
+	invoke("sync", "--item", "PAPER001", "--artifact", "Quill")
 	invoke("sync")
 	status := func() ([]model.Job, []model.Receipt) {
 		t.Helper()
@@ -138,7 +145,9 @@ elif sys.argv[1] == 'attach':
 	if len(jobs) != 1 || jobs[0].State != "submitted" || sends != 1 {
 		t.Fatal(jobs, sends)
 	}
-	token := jobs[0].Token
+	if jobs[0].OutboundName != "reed26-quill.pdf" {
+		t.Fatalf("unexpected recorded filename: %q", jobs[0].OutboundName)
+	}
 	rejectInvalid := func(decision ...string) {
 		t.Helper()
 		if err := run(context.Background(), append([]string{"resolve", "PAPER001"}, decision...), io.Discard); err == nil {
@@ -157,10 +166,10 @@ elif sys.argv[1] == 'attach':
 	invoke("sync")
 	rejectInvalid("rejected", "gmail-1")
 	jobs, _ = status()
-	if sends != 2 || jobs[0].State != "submitted" || jobs[0].GmailID != "gmail-2" || jobs[0].Token != token || len(jobs[0].RejectedGmailIDs) != 1 || jobs[0].RejectedGmailIDs[0] != "gmail-1" {
+	if sends != 2 || jobs[0].State != "submitted" || jobs[0].GmailID != "gmail-2" || jobs[0].OutboundName != "reed26-quill.pdf" || len(jobs[0].RejectedGmailIDs) != 1 || jobs[0].RejectedGmailIDs[0] != "gmail-1" {
 		t.Fatalf("retry did not preserve delivery history: %+v, sends=%d", jobs, sends)
 	}
-	// A mistyped first folder must not strand the original delivery token.
+	// A mistyped first folder must not strand the original delivery.
 	c.Folder = "missing"
 	write(configPath, encode(c))
 	var failed bytes.Buffer
@@ -169,7 +178,7 @@ elif sys.argv[1] == 'attach':
 	}
 	c.Folder = "folder"
 	write(configPath, encode(c))
-	exportName = jobs[0].Token + " Shared title.pdf"
+	exportName = "reed26-quill - Kindle.pdf"
 	invoke("receive", "export", "--json")
 	invoke("receive", "export")
 	_, receipts := status()

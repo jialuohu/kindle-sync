@@ -58,6 +58,30 @@ func TestMembersFollowsPaginationAndNestedCollections(t *testing.T) {
 	}
 }
 
+func TestPaperUsesOrderedAuthorsAndPublicationMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		title, json, author, year string
+	}{
+		{"paper", `{"meta":{"parsedDate":"2026-05-12"},"data":{"date":"online 2025","shortTitle":"Quill","abstractNote":"We present QuillIndex (Quill for short), a catalog index.","creators":[{"creatorType":"editor","lastName":"Editor"},{"creatorType":"author","lastName":"Reed","firstName":"Avery"},{"creatorType":"author","lastName":"Vale"}]}}`, "Reed", "2026"},
+		{"organization", `{"data":{"date":"Aug 2024","creators":[{"creatorType":"author","name":"Lab Group"}]}}`, "Lab Group", "2024"},
+		{"undated", `{"data":{"dateAdded":"2024-02-04","date":"1999\u20132001","creators":[{"creatorType":"editor","lastName":"Editor"}]}}`, "", ""},
+	} {
+		t.Run(tc.title, func(t *testing.T) {
+			var row record
+			if err := json.Unmarshal([]byte(tc.json), &row); err != nil {
+				t.Fatal(err)
+			}
+			p := row.paper()
+			if p.FirstAuthor != tc.author || p.Year != tc.year {
+				t.Fatalf("paper = %+v", p)
+			}
+			if tc.title == "paper" && (p.ShortTitle != "Quill" || p.Artifact != "Quill") {
+				t.Fatalf("lost artifact metadata: %+v", p)
+			}
+		})
+	}
+}
+
 func TestInconsistentPagesDoNotInitializeBaseline(t *testing.T) {
 	c := webClient(t, func(w http.ResponseWriter, r *http.Request) {
 		version := "1"

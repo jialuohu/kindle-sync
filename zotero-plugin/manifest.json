@@ -1,0 +1,14 @@
+{
+  "manifest_version": 2,
+  "name": "Kindle Notes for Zotero",
+  "version": "1.0.0",
+  "description": "Open the newest Kindle Sync notes PDF when opening a paper in Zotero.",
+  "applications": {
+    "zotero": {
+      "id": "kindle-notes@kindle-sync",
+      "update_url": "https://updates.invalid/kindle-notes.json",
+      "strict_min_version": "10.0",
+      "strict_max_version": "10.0.*"
+    }
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"kindle-sync/internal/engine"
 	"kindle-sync/internal/model"
@@ -73,7 +74,14 @@ func (g *fakeGoogle) Send(_ context.Context, p, name string) (string, error) {
 	}
 	return "gmail-id", nil
 }
-func (g *fakeGoogle) Files(context.Context) ([]model.DriveFile, error) { return g.files, nil }
+func (g *fakeGoogle) Files(context.Context) ([]model.DriveFile, error) {
+	for i := range g.files {
+		if g.files[i].CreatedTime == "" {
+			g.files[i].CreatedTime = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return g.files, nil
+}
 func (g *fakeGoogle) Download(_ context.Context, f model.DriveFile, p string) error {
 	g.downloads++
 	return os.WriteFile(p, []byte(g.bytes[f.ID]), 0600)
@@ -201,7 +209,7 @@ func TestSourceChoiceAndRoundTrip(t *testing.T) {
 	f.run(t)
 	f.o.Item, f.o.Attachment = "", ""
 	jobs := f.jobs(t)
-	f.g.files = []model.DriveFile{{ID: "a", Version: "1", Name: jobs["A"].Token + " Same paper.pdf"}, {ID: "b", Version: "1", Name: "Kindle_" + jobs["B"].Token + "_Same_paper.pdf"}}
+	f.g.files = []model.DriveFile{{ID: "a", Version: "1", Name: jobs["A"].OutboundName}, {ID: "b", Version: "1", Name: strings.TrimSuffix(jobs["B"].OutboundName, ".pdf") + " - Kindle.pdf"}}
 	f.g.bytes["a"] = "%PDF-red mark"
 	f.g.bytes["b"] = "%PDF-blue mark"
 	f.run(t)
@@ -271,18 +279,18 @@ func TestScopedBackfill(t *testing.T) {
 	}
 }
 
-func TestResolveChecksStateAndPreservesToken(t *testing.T) {
+func TestResolveChecksStateAndPreservesFilename(t *testing.T) {
 	f := newFixture(t)
 	f.run(t)
 	f.add("unknown", "%PDF-x")
 	f.g.sendError = errors.New("lost response")
 	f.run(t)
-	token := f.jobs(t)["unknown"].Token
+	name := f.jobs(t)["unknown"].OutboundName
 	if _, err := engine.Resolve(f.s, "unknown", "skip", ""); err == nil {
 		t.Fatal("accepted invalid decision")
 	}
 	got, err := engine.Resolve(f.s, "unknown", "retry", "")
-	if err != nil || got.Token != token || got.State != "queued" {
+	if err != nil || name == "" || got.OutboundName != name || got.State != "queued" {
 		t.Fatalf("%+v, %v", got, err)
 	}
 	if _, err := engine.Resolve(f.s, "unknown", "received", ""); err == nil {
@@ -297,6 +305,124 @@ func TestResolveChecksStateAndPreservesToken(t *testing.T) {
 	f.run(t)
 	if len(f.g.sent) != count {
 		t.Fatal("received paper replayed")
+	}
+}
+
+func TestArtifactOverrideSurvivesMissingSourceAndRetry(t *testing.T) {
+	f := newFixture(t)
+	f.add("DEMO1234", "")
+	f.run(t) // Simulate a baseline saved before creator/date metadata was available.
+	f.z.collections["root"][0].FirstAuthor = "Reed"
+	f.z.collections["root"][0].Year = "2026"
+	f.o.Item, f.o.Artifact = "DEMO1234", "Quill"
+	f.o.ArtifactNames = map[string]string{"DEMO1234": "less-specific"}
+	f.o.DryRun = true
+	preview := f.run(t)
+	if !strings.Contains(strings.Join(preview.Actions, "\n"), "reed26-quill.pdf") || f.jobs(t)["DEMO1234"].OutboundName != "" {
+		t.Fatal(preview, f.jobs(t))
+	}
+	f.o.DryRun = false
+	f.run(t)
+	j := f.jobs(t)["DEMO1234"]
+	if j.OutboundName != "reed26-quill.pdf" || j.State != "waiting_pdf" || j.Token != "" {
+		t.Fatal(j)
+	}
+	f.o.Item, f.o.Artifact = "", ""
+	f.z.pdfs["source-DEMO1234"] = "%PDF-new"
+	f.g.sendError = model.ErrSendRejected
+	f.run(t)
+	f.g.sendError = nil
+	f.z.collections["root"][0].Title = "changed in Zotero"
+	f.run(t)
+	if len(f.g.sent) != 2 || f.g.sent[0] != "reed26-quill.pdf" || f.g.sent[1] != f.g.sent[0] {
+		t.Fatal(f.g.sent)
+	}
+}
+
+func TestConfiguredArtifactAndOlderDriveExports(t *testing.T) {
+	f := newFixture(t)
+	f.run(t)
+	f.add("DEMO1234", "%PDF-x")
+	p := &f.z.collections["root"][0]
+	p.FirstAuthor, p.Year, p.Title = "Reed", "2026", "Indexing library records"
+	f.o.ArtifactNames = map[string]string{"DEMO1234": "Quill"}
+	f.g.files = []model.DriveFile{{ID: "older", Version: "1", Name: "reed26-quill - Kindle.pdf", CreatedTime: "2001-12-31T23:59:00.120-05:00"}}
+	f.g.bytes["older"] = "%PDF-earlier"
+	f.run(t)
+	if len(f.g.sent) != 1 || f.g.sent[0] != "reed26-quill.pdf" || len(f.z.archives) != 0 {
+		t.Fatal(f.g.sent, f.z.archives)
+	}
+	// An explicitly selected older file can still be archived.
+	f.o.ReturnFile, f.o.MatchParent = "older", "DEMO1234"
+	f.run(t)
+	if len(f.z.archives) != 1 || f.z.archives[0].parent != "DEMO1234" {
+		t.Fatal(f.z.archives)
+	}
+}
+
+func TestCollidingNamesReturnToTheirOwnPaper(t *testing.T) {
+	f := newFixture(t)
+	f.run(t)
+	for _, k := range []string{"AAAA1111", "BBBB2222"} {
+		f.add(k, "%PDF-short")
+	}
+	for i := range f.z.collections["root"] {
+		p := &f.z.collections["root"][i]
+		p.FirstAuthor, p.Year, p.Title = "Reed", "2026", "Quill: A system"
+	}
+	f.z.pdfs["source-BBBB2222"] = "%PDF-" + strings.Repeat("b", 30)
+	f.run(t)
+	j := f.jobs(t)
+	if len(f.g.sent) != 1 || f.g.sent[0] != "reed26-quill.pdf" || j["BBBB2222"].OutboundName != "reed26-quill-bbbb2222.pdf" || filepath.Base(j["BBBB2222"].ManualFile) != "reed26-quill-bbbb2222.pdf" {
+		t.Fatal(f.g.sent, j)
+	}
+	for id, name := range map[string]string{"A": "Reed26-Quill - Kindle.PDF", "B": "reed26-quill-bbbb2222.pdf", "other": "reed26-quill-extra.pdf"} {
+		f.g.files = append(f.g.files, model.DriveFile{ID: id, Version: "1", Name: name})
+		f.g.bytes[id] = "%PDF-" + id
+	}
+	f.run(t)
+	if len(f.z.archives) != 2 || f.z.archives[0].parent != "AAAA1111" || f.z.archives[1].parent != "BBBB2222" {
+		t.Fatal(f.z.archives)
+	}
+}
+
+func TestLegacyRetryAndAmbiguousExport(t *testing.T) {
+	f := newFixture(t)
+	f.run(t)
+	const token = "KRS-ABCDEFGHIJKLMNOP"
+	f.add("old", "%PDF-original")
+	if err := f.s.PutJob(model.Job{Paper: model.Paper{Key: "old", Title: "Original Title"}, State: "queued", Token: token, Source: "source-old", SourceHash: "old-hash"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"ambiguous1", "ambiguous2"} {
+		if err := f.s.PutJob(model.Job{Paper: model.Paper{Key: k}, State: "submitted", OutboundName: "reed26-quill.pdf"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.run(t)
+	if len(f.g.sent) != 1 || f.g.sent[0] != token+" Original Title.pdf" {
+		t.Fatal(f.g.sent)
+	}
+	f.g.files = []model.DriveFile{{ID: "legacy", Version: "1", Name: "Kindle_" + token + "_Original_Title.pdf"}, {ID: "duplicate", Version: "1", Name: "reed26-quill - Kindle.pdf"}}
+	f.g.bytes["legacy"], f.g.bytes["duplicate"] = "%PDF-legacy", "%PDF-duplicate"
+	f.run(t)
+	if len(f.z.archives) != 1 || f.z.archives[0].parent != "old" {
+		t.Fatal(f.z.archives)
+	}
+}
+
+func TestPreviouslyUnmatchedExportDoesNotAcquireNewParent(t *testing.T) {
+	f := newFixture(t)
+	f.run(t)
+	f.g.files = []model.DriveFile{{ID: "earlier", Version: "1", Name: "reed26-quill - Kindle.pdf"}}
+	f.g.bytes["earlier"] = "%PDF-earlier"
+	f.run(t)
+	f.add("PAPER123", "%PDF-original")
+	p := &f.z.collections["root"][0]
+	p.FirstAuthor, p.Year, p.Title = "Reed", "2026", "Quill: Old names"
+	f.run(t)
+	if len(f.g.sent) != 1 || f.g.sent[0] != "reed26-quill-paper123.pdf" || len(f.z.archives) != 0 {
+		t.Fatal(f.g.sent, f.z.archives)
 	}
 }
 
@@ -335,7 +461,7 @@ func TestReceiveOneCurrentExportAndResume(t *testing.T) {
 	f.add("pilot", "%PDF-pilot")
 	f.run(t)
 	f.add("unsent", "%PDF-queued")
-	title := f.jobs(t)["pilot"].Token + " annotated.pdf"
+	title := f.jobs(t)["pilot"].OutboundName
 	f.g.files = []model.DriveFile{{ID: "other", Name: title, Version: "1"}, {ID: "pilot-export", Name: title, Version: "2"}}
 	f.g.bytes["pilot-export"] = "%PDF-annotated"
 	f.o.ReturnFile = "pilot-export"
@@ -458,7 +584,7 @@ func TestSupersededUndownloadedRevisionStopsRetrying(t *testing.T) {
 	f.run(t)
 	f.add("SOURCE", "%PDF-original")
 	f.run(t)
-	name := f.jobs(t)["SOURCE"].Token + " annotated.pdf"
+	name := f.jobs(t)["SOURCE"].OutboundName
 	f.g.files = []model.DriveFile{{ID: "replaced", Version: "1", Name: name}}
 	f.g.bytes["replaced"] = "incomplete non-PDF"
 	if res := f.run(t); len(res.Problems) != 1 {

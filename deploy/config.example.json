@@ -1,6 +1,7 @@
 {
   "library_id": "12345678",
   "collection_key": "ABCD2345",
+  "artifact_names": {},
   "sender_email": "",
   "kindle_email": "",
   "drive_folder_id": "",

@@ -21,32 +21,35 @@ import (
 	"kindle-sync/internal/engine"
 	"kindle-sync/internal/googleio"
 	"kindle-sync/internal/model"
+	"kindle-sync/internal/naming"
 	"kindle-sync/internal/state"
 	"kindle-sync/internal/zotero"
 )
 
 type config struct {
-	LibraryID    string `json:"library_id"`
-	Collection   string `json:"collection_key"`
-	Sender       string `json:"sender_email"`
-	Kindle       string `json:"kindle_email"`
-	Folder       string `json:"drive_folder_id"`
-	StateDir     string `json:"state_dir"`
-	WebDAV       string `json:"webdav_url"`
-	HelperPath   string `json:"helper_path"`
-	HelperPython string `json:"helper_python"`
-	MailLimit    int64  `json:"email_limit_bytes"`
+	LibraryID     string            `json:"library_id"`
+	Collection    string            `json:"collection_key"`
+	Sender        string            `json:"sender_email"`
+	Kindle        string            `json:"kindle_email"`
+	Folder        string            `json:"drive_folder_id"`
+	StateDir      string            `json:"state_dir"`
+	WebDAV        string            `json:"webdav_url"`
+	HelperPath    string            `json:"helper_path"`
+	HelperPython  string            `json:"helper_python"`
+	MailLimit     int64             `json:"email_limit_bytes"`
+	ArtifactNames map[string]string `json:"artifact_names,omitempty"`
 }
 
 const usage = `kindle-sync [--config PATH] COMMAND [--json]
   auth gmail|drive                  Authorize the server through a loopback browser callback
   sync [--dry-run]                  Discover papers, submit mail and archive receipts
   sync --backfill COLLECTION        Include historical members of this collection
-  sync --item ITEM --attachment KEY Choose a source PDF explicitly
+  sync --item ITEM [--attachment KEY] [--artifact NAME]
+                                    Select one paper, its PDF, or its artifact name
   resolve ITEM received|retry       Resolve an uncertain send after checking the device
   resolve ITEM rejected GMAIL_ID    Queue a retry after Amazon rejected that submission
   status                            Show the local queue and Drive receipts
-  receive DRIVE_FILE_ID             Process one current export using its delivery code
+  receive DRIVE_FILE_ID             Match one current export to its recorded delivery
   match DRIVE_FILE_ID ITEM          Archive a returned PDF under the specified paper
 
 Config defaults to KINDLE_SYNC_CONFIG or /etc/kindle-sync/config.json.
@@ -87,6 +90,14 @@ func readConfig(p string) (config, error) {
 	if c.MailLimit > googleio.MaxPDFUploadBytes {
 		c.MailLimit = googleio.MaxPDFUploadBytes
 	}
+	for key, name := range c.ArtifactNames {
+		if !zotKey.MatchString(key) || name == "" {
+			return c, errors.New("artifact_names requires an eight-character Zotero item key and a name")
+		}
+		if _, err := naming.Filename(model.Paper{}, name); err != nil {
+			return c, fmt.Errorf("artifact_names[%s]: %w", key, err)
+		}
+	}
 	return c, nil
 }
 
@@ -115,13 +126,14 @@ func configArgs(args []string) (string, []string, error) {
 }
 
 func parseOptions(args []string, c config) (model.Options, error) {
-	o := model.Options{Root: c.Collection, Spool: filepath.Join(c.StateDir, "spool"), MaxEmailBytes: c.MailLimit, SkipReturns: c.Folder == ""}
+	o := model.Options{Root: c.Collection, Spool: filepath.Join(c.StateDir, "spool"), MaxEmailBytes: c.MailLimit, SkipReturns: c.Folder == "", ArtifactNames: c.ArtifactNames}
 	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	if args[0] == "sync" {
 		f.BoolVar(&o.DryRun, "dry-run", false, "")
 		f.StringVar(&o.Item, "item", "", "")
 		f.StringVar(&o.Attachment, "attachment", "", "")
+		f.StringVar(&o.Artifact, "artifact", "", "")
 		f.StringVar(&o.Backfill, "backfill", "", "")
 	}
 	if args[0] == "match" {
@@ -143,8 +155,11 @@ func parseOptions(args []string, c config) (model.Options, error) {
 	} else if f.NArg() != 0 {
 		return o, errors.New("unexpected positional argument")
 	}
-	if (o.Item == "") != (o.Attachment == "") || (o.Item != "" && o.Backfill != "") {
-		return o, errors.New("use --item and --attachment together, separately from --backfill")
+	if o.Item == "" && (o.Attachment != "" || o.Artifact != "") {
+		return o, errors.New("--attachment and --artifact require --item")
+	}
+	if o.Item != "" && o.Backfill != "" {
+		return o, errors.New("choose --item or --backfill for this run")
 	}
 	for _, k := range []string{o.Item, o.Attachment, o.Backfill} {
 		if k != "" && !zotKey.MatchString(k) {

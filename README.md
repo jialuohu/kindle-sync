@@ -2,6 +2,10 @@
 
 Send papers from a Zotero collection to a Kindle Scribe, one PDF per email. Write on the paper and choose **Share → Google Drive → Upload** on the Scribe. The next sync stores the exported PDF in Koofr WebDAV and adds a **Kindle Notes** attachment to the original Zotero item. Identical exports of the same paper share one attachment. [Scribe export instructions](https://digprjsurvey.amazon.com/csad/help/node/TP8wuaQilIlwlITVTL)
 
+The Kindle filename combines the first author's surname, the final two digits of the year and the paper's artifact name. A fictional 2026 paper by Reed introducing Quill becomes `reed26-quill.pdf`. Set `artifact_names` by Zotero item key to override an inferred name on scheduled runs. A filename collision adds the item key to the later name.
+
+To open the newest annotated PDF when you double-click a paper in Zotero 10.0.x, install the optional [Kindle Notes desktop plugin](zotero-plugin/README.md).
+
 ## Install on Linux
 
 The server needs systemd and Python 3.12 with venv and pip. From the repository root, use Go 1.26 or later and Make to build an x86-64 package. Use `GOARCH=arm64` for an ARM64 server.
@@ -51,8 +55,8 @@ Gmail grants permission to send mail and verify the sender's address. Drive gran
 ## Verify one paper
 
 1. Pick a paper with a stored PDF in the reading collection. Run `ks sync --dry-run` to preview, then `ks sync` to record existing papers as a baseline. Later runs send items when they first appear in the collection tree, even if a whole subcollection moves into it.
-2. Send it with `ks sync --item ITEM_KEY --attachment ATTACHMENT_KEY`, using the eight-character keys of the paper and its stored PDF. A `submitted` status means Gmail accepted the message. Confirm receipt on the Scribe.
-3. Mark a page on the Scribe and share the PDF to Google Drive. Set `drive_folder_id` to the folder created by the device. Keep the delivery identifier beginning with `KRS-` in the filename. It links the export to the paper.
+2. Send it with `ks sync --item ITEM_KEY`. If several PDFs qualify, add `--attachment ATTACHMENT_KEY`. Use `--artifact NAME` to set a short name for this delivery. A `submitted` status means Gmail accepted the message. Confirm receipt on the Scribe.
+3. Mark a page on the Scribe and share the PDF to Google Drive. Set `drive_folder_id` to the folder created by the device. The CLI matches the delivery filename, including the Scribe's optional ` - Kindle` suffix. Files sent by earlier releases can still match by their `KRS-` identifier.
 4. Process the exported PDF with `ks receive DRIVE_FILE_ID`, using the file ID from its Drive link. Sync Zotero, open the Kindle Notes attachment and check the marks. Confirm that repeating the import leaves one attachment and that a changed PDF creates another version.
 
 ## Run and troubleshoot
@@ -82,4 +86,4 @@ The timer runs every five minutes. For a backup, stop the timer, wait for active
 
 ## Development
 
-Run `make test` for the Go and Python tests. Run `go test -race ./...` to check for data races. For the local WebDAV integration tests, install `helper/requirements.lock` in a Python 3.12 virtual environment and set `KINDLE_SYNC_TEST_PYTHON` to its Python executable's absolute path.
+Run `make test` for the Go and Python tests. Run `go test -race ./...` to check for data races. For the local WebDAV integration tests, install `helper/requirements.lock` in a Python 3.12 virtual environment and set `KINDLE_SYNC_TEST_PYTHON` to its Python executable's absolute path. Run `node --test zotero-plugin/test/*.cjs` for the desktop plugin tests.

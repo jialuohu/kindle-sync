@@ -11,8 +11,12 @@ var ErrTooLarge = errors.New("PDF exceeds the supported size limit")
 var ErrSendRejected = errors.New("mail submission was rejected")
 
 type Paper struct {
-	Key   string `json:"key"`
-	Title string `json:"title"`
+	Key         string `json:"key"`
+	Title       string `json:"title"`
+	FirstAuthor string `json:"first_author,omitempty"`
+	Year        string `json:"year,omitempty"`
+	ShortTitle  string `json:"short_title,omitempty"`
+	Artifact    string `json:"artifact,omitempty"` // Name explicitly introduced in the abstract.
 }
 type Attachment struct {
 	Key  string `json:"key"`
@@ -20,10 +24,11 @@ type Attachment struct {
 	MD5  string `json:"md5,omitempty"`
 }
 type DriveFile struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	MD5     string `json:"md5,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	MD5         string `json:"md5,omitempty"`
+	CreatedTime string `json:"created_time,omitempty"`
 }
 type Zotero interface {
 	ValidateParent(context.Context, string) error
@@ -42,6 +47,8 @@ type Job struct {
 	Paper
 	State            string       `json:"state"`
 	Token            string       `json:"token,omitempty"`
+	OutboundName     string       `json:"outbound_name,omitempty"`
+	NamedAt          string       `json:"named_at,omitempty"`
 	Source           string       `json:"source,omitempty"` // attachment key
 	SourceHash       string       `json:"source_hash,omitempty"`
 	Candidates       []Attachment `json:"candidates,omitempty"`
@@ -68,6 +75,8 @@ type Store interface {
 }
 type Options struct {
 	Root, Backfill, Item, Attachment, ReturnFile, MatchParent, MatchVersion, Spool string
+	Artifact                                                                       string
+	ArtifactNames                                                                  map[string]string
 	MaxEmailBytes                                                                  int64
 	DryRun, SkipReturns                                                            bool
 }
