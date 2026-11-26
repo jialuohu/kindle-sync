@@ -4,6 +4,8 @@ Run these commands from a source checkout on the Docker host. The `sync` service
 
 ## Prepare the image and accounts
 
+Build with the supplied Compose file. It disables the build attestation that can include a private Git remote in image metadata. [Docker build provenance](https://docs.docker.com/reference/compose-file/build/#provenance)
+
 1. Confirm the intended host with `docker context show` and `docker info`. Check `docker compose ls` for an existing deployment. If this library already uses a native installation, follow the migration steps below before starting the scheduler.
 2. Put a private copy of `deploy/config.example.json` outside the checkout. Enter the library ID, watched collection, Gmail sender, Kindle address, and Koofr directory. Preserve any artifact-name overrides and configured Drive folder. Use the example's container paths for `state_dir`, `helper_path`, and `helper_python`. See [account setup](setup.md#connect-your-accounts) for values and Amazon's approved-sender setting.
 3. Use a dedicated credential directory for this service. It holds `zotero-api-key`, `koofr-username`, `koofr-password`, and `google-client.json`. An existing installation may also have `gmail-token.json` and `drive-token.json`. Keep the directory at mode `0700` and sensitive files at `0600`. The container needs write access to the directory to refresh tokens. If a credential is a symlink to a file outside that directory, copy the file into the dedicated directory with mode `0600` so the container can read it.

@@ -5,6 +5,8 @@ services:
     image: ${KINDLE_SYNC_IMAGE:-kindle-sync:local}
     build:
       context: .
+      # BuildKit's default provenance embeds the checkout's Git remote.
+      provenance: false
       args:
         APP_UID: ${KINDLE_SYNC_UID:-1000}
         APP_GID: ${KINDLE_SYNC_GID:-1000}
