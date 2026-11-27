@@ -2,6 +2,11 @@
 
 Read Zotero papers on a Kindle Scribe and save your handwritten notes back to the same Zotero item.
 
+<picture>
+  <source media="(max-width: 600px)" srcset="docs/assets/kindle-workflow-mobile.webp">
+  <img src="docs/assets/kindle-workflow.webp" alt="Kindle Sync emails a new Zotero paper to your Scribe. After annotating, tap Share → Google Drive → Upload. Kindle Sync attaches the latest marked-up PDF to the original Zotero item.">
+</picture>
+
 ## Use with an agent
 
 **Docker Compose is the recommended way to deploy Kindle Sync.** Paste this prompt into an agent with terminal access to the machine that will run it.
