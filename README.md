@@ -4,11 +4,11 @@ Read Zotero papers on a Kindle Scribe and save your handwritten notes back to th
 
 ## Use with an agent
 
-Paste this prompt into an agent with terminal access to the machine that will run Kindle Sync.
+**Docker Compose is the recommended way to deploy Kindle Sync.** Paste this prompt into an agent with terminal access to the machine that will run it.
 
 ```text
 Clone https://github.com/jialuohu/kindle-sync.git and deploy Kindle Sync on this
-machine. From the checkout, follow .agents/skills/kindle-sync-deploy/SKILL.md.
+machine with Docker Compose. Follow .agents/skills/kindle-sync-deploy/SKILL.md.
 Walk me through sign-in, local credential setup, and any steps on my Kindle.
 Verify the startup sync and the next scheduled sync. Report papers sent, notes
 saved, and any errors.
