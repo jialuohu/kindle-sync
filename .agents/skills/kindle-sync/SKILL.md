@@ -1,31 +1,43 @@
 ---
 name: kindle-sync
-description: Sync a Zotero reading collection with Kindle Scribe. Use for sending papers, receiving handwritten PDFs shared to Google Drive, previewing a sync, and checking a delivery.
+description: Sync a Zotero reading collection with Kindle Scribe. Use this skill to send papers, receive annotated PDFs from Google Drive, preview a sync, or check a delivery.
 ---
 
 # Kindle Sync
 
-Run every command against the deployment that owns the queue. Use the executable named by `KINDLE_SYNC_RUNNER` if set, otherwise the checkout's `bin/kindle-sync-agent`. With a configured native installation, use its `kindle-sync` on PATH. If a selected runner fails, report the error. Starting a second database could send the same papers again. In the table, commands are arguments to the runner.
+Use the runner for the deployment that owns the queue. First check `KINDLE_SYNC_RUNNER`. If it is unset, use the checkout's `bin/kindle-sync-agent` for Docker Compose or the configured `kindle-sync` on PATH for a native installation. If the selected runner fails, report the error. Opening a second database can send papers twice. For installation, follow the [deployment skill](../kindle-sync-deploy/SKILL.md).
 
-| User request | Command |
+## Run the requested sync
+
+Pass the arguments below to the runner. For a preview, keep the requested direction and item or collection selector and add `--dry-run`.
+
+| Request | Arguments |
 | --- | --- |
-| Sync my Kindle | `sync --json` sends new papers and receives exported notes. |
-| Preview what will sync | `sync --dry-run --json`. Keep any direction or item restriction the user supplied. |
+| Sync my Kindle | `sync --json` |
+| Preview my Kindle sync | `sync --dry-run --json` |
 | Send new papers | `sync --direction send --json` |
-| Send one paper | Identify the Zotero parent, then `sync --direction send --item ITEM_KEY --json`. |
-| Resend one paper under a corrected filename | `sync --item ITEM_KEY --resend-as EXPECTED.pdf --json`. Use the exact requested filename. Add `--dry-run` to preview. |
-| Bring my notes back | `sync --direction receive --json` |
-| Receive this Drive PDF | `receive DRIVE_FILE_ID --json`. Use the ID from the supplied file link. If it skips the file, report the result. |
-| Check a delivery or earlier export | `status --json`. Filter jobs or receipts to the user's request. |
+| Send one paper | `sync --item ITEM_KEY --json` |
+| Send unsent papers already in a collection at setup | `sync --backfill COLLECTION_KEY --json` |
+| Resend one paper with a corrected filename | `sync --item ITEM_KEY --resend-as EXPECTED.pdf --json` |
+| Bring back exported notes | `sync --direction receive --json` |
+| Receive one PDF from a Drive link | `receive DRIVE_FILE_ID --json` |
+| Check a delivery or export | `status --json` |
 
-For a title, short title, system name, Zotero item link or key, pass the supplied text as a single argument to `find "QUERY" --json`. It searches the current reading collection and its descendants. Use the key in `matches` when exactly one paper matches. For multiple matches, show titles, first authors and years and ask the user to choose. If none match, report that and leave the library alone. If several source PDFs qualify, show their names and use the chosen `--attachment KEY`.
+A full sync sends new papers and checks Drive for annotations. Use `--backfill` only on request. For a resend, use the exact requested filename. To export handwriting on the Scribe, the reader taps **Share → Google Drive → Upload**.
 
-Read the JSON and the exit status. A run can submit papers or save notes before reporting a problem. Use `status` to verify the affected records. Report Gmail submissions, saved notes, and outstanding work. Each paper keeps one current Kindle Notes attachment. Identical exports reuse it, and superseded copies go to Zotero Trash after verification. When a user asks where their handwriting is, the device step is **Share → Google Drive → Upload**.
+## Find the paper
 
-- `submitted` means Gmail accepted the email. Only report device receipt on user confirmation or a corresponding `confirmed_received` record.
-- `uncertain` can mean the email was sent. Check the device with the user before authorizing a retry. A confirmed Amazon rejection requires the matching Gmail message ID.
-- A `retired` receipt records an older export. Report the current archived notes when the user asks which copy to open.
-- `manual_upload` gives the prepared PDF path. On Compose, it is inside the container. To give the user a local file for upload, use the deployment's `docker compose cp` to copy it to a private host directory with the same filename.
-- Automatic receipt requires a unique match to a submitted or confirmed delivery and a live Zotero parent, even if the paper moved out of the reading collection. Leave unrelated and ambiguous PDFs in Drive. Use `match DRIVE_FILE_ID ITEM_KEY` only when the user requests that specific pairing. Add `--version VERSION` to select an older cached revision.
+Run `find "QUERY" --json` with the user's title, short title, system name, Zotero item link, or key as one argument. The search includes subcollections. Use the item key for a single match. If several papers match, show their titles, first authors, and years and ask which one to use. Report an empty result. If several source PDFs qualify, show their filenames and pass the user's choice with `--attachment KEY`.
 
-Use `--backfill` only for a request to send historical members of a collection. Full sync, backfill and live sends are separate from a request to inspect or preview. For installation or a missing deployment, see the [deployment skill](../kindle-sync-deploy/SKILL.md).
+## Check the result
+
+Read the exit status and JSON report. Even a failed run can submit papers or archive notes. Check the affected jobs or receipts with `status --json` and report Gmail submissions, saved notes, and remaining problems.
+
+| State | What to report or do |
+| --- | --- |
+| `submitted` | Gmail accepted the email. Confirm arrival on the Kindle only when the reader verifies it or the job says `confirmed_received`. |
+| `uncertain` | The email may have been sent. Ask the reader to check the Kindle before retrying. A confirmed Amazon rejection requires the matching Gmail message ID. |
+| `manual_upload` | Give the reader the prepared PDF. With Compose, use the deployment's `docker compose cp` command to copy it to a private host directory under the same filename. |
+| `retired` | This is an older export. Point the reader to the current **Kindle Notes** attachment. Identical exports reuse it. After verifying a newer, changed PDF, the CLI moves the older attachment to Zotero Trash. |
+
+The CLI leaves unrelated or ambiguous PDFs in Drive. To return automatically, an export must match one submitted or confirmed delivery with a live Zotero parent. Moving the parent out of the reading collection preserves the match. If `receive` skips a file, report that outcome. Use `match DRIVE_FILE_ID ITEM_KEY` only when the user requests that specific pairing. To select an older cached revision, place `--version VERSION` before the IDs.

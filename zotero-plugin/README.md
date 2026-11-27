@@ -1,16 +1,16 @@
 # Kindle Notes for Zotero
 
-Double-click a paper in Zotero, or select it and press Enter, to open its current Kindle Notes PDF. Expand the paper to open the original PDF. Papers without Kindle Notes open normally.
+Double-click a paper in Zotero, or select it and press **Enter**, to open its latest Kindle Notes PDF. To read the original PDF, expand the paper and open that attachment. Papers without Kindle Notes open as usual.
 
 ## Install
 
-1. Use `zotero-plugin/kindle-notes.xpi` from the Linux release, or run `make plugin` in the repository root to build `dist/kindle-notes.xpi`.
-2. In Zotero desktop **10.0.x**, open **Tools → Plugins** and drag the XPI into the window. Install on each desktop where you want this behavior. [Zotero plugin installation](https://www.zotero.org/support/plugins)
+1. Get `zotero-plugin/kindle-notes.xpi` from the extracted Kindle Sync Linux archive. If you have a source checkout, run `make plugin` in the repository root to create `dist/kindle-notes.xpi`.
+2. In **Zotero 10.0.x**, open **Tools → Plugins** and drag the XPI file into the window. Repeat on each computer where you read papers. [Zotero plugin installation](https://www.zotero.org/support/plugins)
 
-Updates are manual. Drag the new XPI into the same window. To restore Zotero’s default attachment selection, disable **Kindle Notes for Zotero**.
+To update the plugin, drag the new XPI into the same window. To restore Zotero's default behavior, disable **Kindle Notes for Zotero** there.
 
 ## How selection works
 
-The plugin looks for stored PDF attachments whose filename or title matches `Kindle Notes - <SHA-256>.pdf`. It picks the most recently added match, using the higher local item ID to break a tie. Selecting an attachment directly always opens that attachment.
+The plugin checks the paper's stored PDF attachments for a filename or title matching `Kindle Notes - <SHA-256>.pdf`. If several match, it opens the most recently added one. The higher local item ID breaks a tie.
 
-Run the plugin tests from the repository root with `node --test zotero-plugin/test/*.cjs`.
+To test attachment selection, run `node --test zotero-plugin/test/*.cjs` from the repository root.

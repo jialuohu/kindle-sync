@@ -1,11 +1,24 @@
 # Zotero attachment helper
 
-The Go CLI calls this Python helper to fetch a paper’s stored PDF and archive the annotated copy in the same personal Zotero library. The helper adapts an existing Zotero attachment tool and uses PyZotero, PyMuPDF, and the WebDAV client from `zotero-mcp-server`.
+Kindle Sync calls this Python helper for two operations on a personal Zotero library.
 
-The helper saves a child attachment named `Kindle Notes - <SHA-256>.pdf`, reads its Zotero record back, and verifies the PDF downloaded from Koofr. After verification, the Go CLI moves superseded Kindle Notes attachments to Zotero Trash. The optional desktop plugin opens the current attachment. [Plugin guide](../zotero-plugin/README.md)
+- **Send a paper.** Download the source PDF from Koofr WebDAV and verify its checksum before the CLI emails it.
+- **Save notes.** Store the annotated PDF under its original Zotero item as `Kindle Notes - <SHA-256>.pdf`. The hash identifies the file contents. The helper reads back the Zotero record and downloads the stored PDF to verify it.
 
-## Development
+Once the new copy passes verification, the CLI moves older Kindle Notes attachments to Zotero Trash. To open the current copy by double-clicking the paper, install the [Kindle Notes plugin](../zotero-plugin/README.md).
 
-From the repository root, run the unit tests with `python3 -B -m unittest discover -s helper/tests`.
+## Run the tests
 
-For the WebDAV integration test, install `helper/requirements.lock` in a Python 3.12 virtual environment. Set `KINDLE_SYNC_TEST_PYTHON` to that environment’s Python executable (absolute path) and run `go test ./internal/zotero`. This test uses a local TLS server for file transfers and an in-memory Zotero client for metadata.
+Run the Python unit tests from the repository root.
+
+```sh
+python3 -B -m unittest discover -s helper/tests
+```
+
+The WebDAV integration tests use a local HTTPS server and an in-memory Zotero client. They exercise PDF downloads and uploads with PyMuPDF, PyZotero, and the WebDAV client from `zotero-mcp-server`. Install the dependencies in a Python 3.12 environment and point Go to its interpreter.
+
+```sh
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r helper/requirements.lock
+KINDLE_SYNC_TEST_PYTHON="$PWD/.venv/bin/python" go test -count=1 -run 'Test(Fetch|Archive)ViaWebDAV' ./internal/zotero
+```

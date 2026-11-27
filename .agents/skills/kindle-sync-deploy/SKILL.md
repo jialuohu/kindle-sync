@@ -1,15 +1,20 @@
 ---
 name: kindle-sync-deploy
-description: Deploy, migrate, verify, or upgrade the Kindle Sync service with Docker Compose. Use for operating the scheduled service that connects Zotero, Kindle Scribe, and Google Drive.
+description: Install, migrate, verify, or upgrade the scheduled Kindle Sync service with Docker Compose.
 ---
 
 # Deploy Kindle Sync
 
-Follow the [Compose deployment guide](../../../docs/docker.md) from the repository root. Identify the intended Docker context, Compose project, current scheduler, and state volume before writing. Keep account settings on the deployment host and credential files in its private secrets directory.
+Run commands from the checkout on the Docker host. Follow the [Docker Compose guide](../../../docs/docker.md) for the commands and private configuration.
 
-1. **Inspect.** Check Docker, Compose, the current image and database. An existing native installation or a replacement Compose project may already own the same reading queue.
-2. **Prepare.** Build the image, configure the mounts, and verify the CLI and helper. On a migration, let the old writer finish, take a private backup, and transfer the complete SQLite state and cached PDFs. Check each job and receipt, the initial collection baseline, and the bound Drive folder before enabling the scheduler. Record the previous image on upgrades.
-3. **Activate.** Point the daily [Kindle Sync skill](../kindle-sync/SKILL.md) at this same instance. Start the five-minute scheduler once the configured library and Drive folder pass preflight. Run interactive Google consent only if the saved authorization is absent or unusable. Let the user complete any browser or Kindle interaction.
-4. **Verify.** Observe the first completed round and the next scheduled one. Report their times, Gmail submissions, saved notes and errors, including zero work. For preview-only requests, stop after preflight. A failed first round warrants inspecting its report and state before retrying.
+1. Identify the Docker context, Compose project, scheduler, and state volume. Check for a native installation or another Compose project using the same queue. For an existing installation, see [Migrate or upgrade](#migrate-or-upgrade) before rebuilding or moving its data.
+2. Build the image, configure its mounts, and check the CLI and PDF helper. Keep account settings, backups, and credentials outside the checkout. Store credentials in the deployment's private secrets directory and keep private paths, tokens, and user data out of logs.
+3. Reuse valid Google authorization. Let the user complete any browser sign-in or Kindle export. Preview the send from the configured Zotero collection. Once the Drive folder is set, preview the return. For a preview-only request, report any missing setup and finish here. For a new deployment without a folder, follow the guide's one-paper test with the user's chosen paper.
+4. Start the five-minute scheduler. Point the [daily sync skill](../kindle-sync/SKILL.md) at the same deployment and verify that its runner sees the same queue.
+5. Observe the startup sync and the next scheduled sync. Report each round's time, Gmail submissions, archived notes, and errors, including zero counts. If a round fails, inspect the report and the saved state before retrying.
 
-If an upgrade fails, use the previous application image with the current data volume. Restoring an old database after sending can deliver papers twice. Keep backups, tokens, private paths and user data out of the checkout and logs.
+## Migrate or upgrade
+
+Before transferring a queue, stop its scheduler and let the active sync finish. Make a private backup of the entire state directory. Transfer the SQLite database and cached PDFs together. Before starting the new scheduler, compare the jobs, receipts, initial collection baseline, and bound Drive folder with the source.
+
+For an upgrade, tag the running image before rebuilding. If the upgrade fails, run the previous image with the current state volume. Restoring a database from before a Gmail submission can send the paper twice.
