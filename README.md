@@ -4,7 +4,7 @@ Read Zotero papers on a Kindle Scribe and save your handwritten notes back to th
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/kindle-workflow-mobile.webp">
-  <img src="docs/assets/kindle-workflow.webp" alt="Kindle Sync emails a new Zotero paper to your Scribe. After annotating, tap Share → Google Drive → Upload. Kindle Sync attaches the latest marked-up PDF to the original Zotero item.">
+  <img src="docs/assets/kindle-workflow.webp" alt="From Zotero, Kindle Sync sends the PDF from Koofr through Gmail and Amazon Send to Kindle to your Kindle Scribe. After annotating, tap Share → Google Drive → Upload. Kindle Sync attaches the marked-up PDF to the original Zotero item.">
 </picture>
 
 ## Use with an agent
