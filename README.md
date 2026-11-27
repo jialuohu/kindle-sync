@@ -14,7 +14,7 @@ Verify the startup sync and the next scheduled sync. Report papers sent, notes
 saved, and any errors.
 ```
 
-After setup, ask your agent to “Preview my Kindle sync” or “Bring back my Kindle notes.” [Deployment skill](.agents/skills/kindle-sync-deploy/SKILL.md) · [Sync skill](.agents/skills/kindle-sync/SKILL.md)
+After setup, tell your agent **“Sync my Kindle.”** It sends new papers to your Kindle and brings annotated PDFs from Google Drive back into Zotero. [Deployment skill](.agents/skills/kindle-sync-deploy/SKILL.md) · [Sync skill](.agents/skills/kindle-sync/SKILL.md)
 
 ## Everyday use
 
