@@ -25,6 +25,13 @@ Pass the arguments below to the runner. For a preview, keep the requested direct
 
 A full sync sends new papers and checks Drive for annotations. Use `--backfill` only on request. For a resend, use the exact requested filename. To export handwriting on the Scribe, the reader taps **Share → Google Drive → Upload**.
 
+## Use connected Google apps
+
+Use the deployed CLI for every send and import so it can track deliveries and attach the latest notes. For lookups, use an official connector already linked to the relevant account, or ask the reader for the Drive link or Amazon notice.
+
+- **Find an export.** Use the reader's Drive link if supplied. Otherwise, a connected Drive app on the Scribe's account can look up the requested PDF in its export folder by filename. If the reader asks to import it and there is a single match, pass its file ID to `receive`. If several match, ask which one they meant.
+- **Investigate a delivery.** Use the Amazon notice the reader provides or look it up in the sender's connected Gmail account. Correlate it with the submission in `status --json`.
+
 ## Find the paper
 
 Run `find "QUERY" --json` with the user's title, short title, system name, Zotero item link, or key as one argument. The search includes subcollections. Use the item key for a single match. If several papers match, show their titles, first authors, and years and ask which one to use. Report an empty result. If several source PDFs qualify, show their filenames and pass the user's choice with `--attachment KEY`.
@@ -35,8 +42,8 @@ Read the exit status and JSON report. Even a failed run can submit papers or arc
 
 | State | What to report or do |
 | --- | --- |
-| `submitted` | Gmail accepted the email. Confirm arrival on the Kindle only when the reader verifies it or the job says `confirmed_received`. |
-| `uncertain` | The email may have been sent. Ask the reader to check the Kindle before retrying. A confirmed Amazon rejection requires the matching Gmail message ID. |
+| `submitted` | Gmail accepted the email. The reader can confirm arrival on the Kindle. For a verified Amazon rejection, use the original submission's Gmail ID from this job. |
+| `uncertain` | The email may have been sent. Ask the reader to check the Kindle before retrying. |
 | `manual_upload` | Give the reader the prepared PDF. With Compose, use the deployment's `docker compose cp` command to copy it to a private host directory under the same filename. |
 | `retired` | This is an older export. Point the reader to the current **Kindle Notes** attachment. Identical exports reuse it. After verifying a newer, changed PDF, the CLI moves the older attachment to Zotero Trash. |
 

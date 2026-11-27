@@ -44,7 +44,9 @@ dc config --quiet && dc build sync && ks --help
 
 ### Authorize Gmail and Google Drive
 
-Reuse valid tokens if the installation uses the same accounts and Google OAuth client. Otherwise, run the command for each account that needs authorization. Open the consent link in your browser. For a remote Docker host, first [forward port 43891 over SSH](setup.md#connect-your-accounts).
+Docker uses its own [Google desktop OAuth client](setup.md#save-the-credentials) so it can sync when your agent is offline. For Gmail, sign in with the Amazon-approved sender and allow sending and email address verification. For Drive, grant read-only access to the account linked to your Scribe. The accounts can differ.
+
+Reuse valid tokens for the same accounts and OAuth client. Run only the command for a service that needs authorization, then open its consent link in your browser. For a remote Docker host, first [forward port 43891 over SSH](setup.md#connect-your-accounts).
 
 ```sh
 dc run --rm --no-deps -p 127.0.0.1:43891:43891 -e KINDLE_SYNC_OAUTH_CONTAINER=1 sync kindle-sync auth gmail
