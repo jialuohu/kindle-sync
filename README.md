@@ -1,38 +1,31 @@
 # Kindle Sync
 
-Read papers from Zotero on a Kindle Scribe and save your handwritten notes back to the same Zotero item.
+Read Zotero papers on a Kindle Scribe and save your handwritten notes back to the same Zotero item.
 
 ## Use with an agent
 
-For a first-time setup, give this prompt to an agent with terminal access to the machine where Kindle Sync will run. It will use the [deployment skill](.agents/skills/kindle-sync-deploy/SKILL.md).
+Paste this prompt into an agent with terminal access to the machine that will run Kindle Sync.
 
 ```text
-Deploy Kindle Sync on this machine. Clone https://github.com/jialuohu/kindle-sync.git
-and open the checkout. If GitHub needs me to sign in, guide me through it.
-Read .agents/skills/kindle-sync-deploy/SKILL.md and follow it to deploy the service.
-
-Guide me through account setup and any steps I need to do in my browser or on my Kindle.
-Show me where to enter credentials locally. Once the service is running, verify the
-startup sync and the next scheduled sync. Tell me what was sent, what notes were
-saved, and whether either sync reported errors.
+Clone https://github.com/jialuohu/kindle-sync.git and deploy Kindle Sync on this
+machine. From the checkout, follow .agents/skills/kindle-sync-deploy/SKILL.md.
+Walk me through sign-in, local credential setup, and any steps on my Kindle.
+Verify the startup sync and the next scheduled sync. Report papers sent, notes
+saved, and any errors.
 ```
 
-After deployment, use the [sync skill](.agents/skills/kindle-sync/SKILL.md). Try “Preview my Kindle sync,” “Send the unsent papers in ReadLater,” or “Bring back my Kindle notes.”
-
-The first scan records papers already in the collection. Ask the agent to send those papers when you are ready. Papers added later go out automatically every five minutes while the service is running.
+After setup, ask your agent to “Preview my Kindle sync” or “Bring back my Kindle notes.” [Deployment skill](.agents/skills/kindle-sync-deploy/SKILL.md) · [Sync skill](.agents/skills/kindle-sync/SKILL.md)
 
 ## Everyday use
 
-1. Add a paper to the Zotero collection you watch, or to any of its subcollections. Kindle Sync fetches the PDF from Koofr WebDAV and emails it to your Kindle. Each paper gets its own message.
-2. Write on the PDF. When you're ready to send it back, choose **Share → Google Drive → Upload** on the Scribe.
-3. After the next sync, open **Kindle Notes** under the paper in Zotero. Each paper keeps its latest annotated PDF. When a newer export changes the PDF, Kindle Sync verifies the new copy, then moves its previous copy to Zotero Trash. The original paper and your Drive exports stay in place.
+1. **Add a paper in Zotero.** Every five minutes, Kindle Sync checks your reading collection and its subcollections. It fetches each new paper’s PDF from Koofr WebDAV and emails it to your Kindle.
+2. **Annotate it on your Scribe.** When you're ready, tap **Share → Google Drive → Upload**.
+3. **Open Kindle Notes in Zotero.** After the next sync, the original item holds your latest annotated PDF alongside the source PDF.
 
-You can move a paper out of your reading collection after sending it. Notes still return to the same Zotero item. If you trash or delete the item, or an export doesn't match a paper Kindle Sync sent, the PDF stays in Drive.
+Papers already in the collection at setup stay unsent until you ask. For example, tell your agent “Send the unsent papers in ReadLater.”
 
-Kindle filenames use the first author's surname, a two-digit year, and the paper's artifact name. A 2026 paper by Reed introducing *Quill* becomes `reed26-quill.pdf`. If publication metadata and the PDF give no year, the filename uses the year the item was added to Zotero. [Filename rules](docs/setup.md#kindle-filenames)
+## Guides
 
-## Setup guides
-
-- [Docker Compose](docs/docker.md) for installation, migration, and upgrades.
-- [Native Linux service](docs/setup.md) for a systemd installation.
-- [Kindle Notes plugin for Zotero](zotero-plugin/README.md) to open the latest annotated PDF when you double-click a paper.
+- [Docker Compose setup and upgrades](docs/docker.md) or [native Linux setup](docs/setup.md)
+- [Kindle filenames](docs/setup.md#kindle-filenames) and [which exports return to Zotero](docs/setup.md#which-exports-return-to-zotero)
+- [Open Kindle Notes by default in Zotero](zotero-plugin/README.md)
