@@ -9,7 +9,7 @@ Read Zotero papers on your Kindle Scribe. Export your annotations to Google Driv
 
 ## Use with an agent
 
-**Docker Compose is the recommended setup.** Paste this prompt into an agent with terminal access to the deployment host.
+**Docker Compose is the recommended setup.** Give this prompt to any agent that can read the repository and run commands on the deployment host.
 
 ```text
 Clone https://github.com/jialuohu/kindle-sync.git
@@ -19,7 +19,7 @@ Check the startup sync and the next scheduled sync. Report papers sent,
 notes saved, and any errors.
 ```
 
-After setup, tell your agent **“Sync my Kindle.”** It sends new papers and brings your exported notes back to Zotero. [Deployment skill](.agents/skills/kindle-sync-deploy/SKILL.md) · [Sync skill](.agents/skills/kindle-sync/SKILL.md)
+After setup, ask your agent to **“Sync my Kindle.”** You can point a new session directly to the Markdown instructions for [deployment](.agents/skills/kindle-sync-deploy/SKILL.md) or [daily sync](.agents/skills/kindle-sync/SKILL.md).
 
 ## Everyday use
 

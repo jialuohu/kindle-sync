@@ -5,7 +5,7 @@ description: Install, migrate, verify, or upgrade the scheduled Kindle Sync serv
 
 # Deploy Kindle Sync
 
-Run commands from the checkout on the Docker host. Follow the [Docker Compose guide](../../../docs/docker.md) for the commands and private configuration.
+Use a local or remote shell to run commands from the checkout on the Docker host. Follow the [Docker Compose guide](../../../docs/docker.md) for the commands and private configuration.
 
 1. Identify the Docker context, Compose project, scheduler, and state volume. Check for a native installation or another Compose project using the same queue. For an existing installation, see [Migrate or upgrade](#migrate-or-upgrade) before rebuilding or moving its data.
 2. Build the image, configure its mounts, and check the CLI and PDF helper. Keep account settings, backups, and credentials outside the checkout. Store credentials in the deployment's private secrets directory and keep private paths, tokens, and user data out of logs.

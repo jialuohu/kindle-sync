@@ -27,7 +27,7 @@ A full sync sends new papers and checks Drive for annotations. Use `--backfill` 
 
 ## Use connected Google apps
 
-Use the deployed CLI for every send and import so it can track deliveries and attach the latest notes. For lookups, use an official connector already linked to the relevant account, or ask the reader for the Drive link or Amazon notice.
+Use the deployed CLI for every send and import so it can track deliveries and attach the latest notes. Gmail and Drive connectors are optional. For lookups, use a connector already authorized for the relevant account, or ask the reader for the Drive link or Amazon notice.
 
 - **Find an export.** Use the reader's Drive link if supplied. Otherwise, a connected Drive app on the Scribe's account can look up the requested PDF in its export folder by filename. If the reader asks to import it and there is a single match, pass its file ID to `receive`. If several match, ask which one they meant.
 - **Investigate a delivery.** Use the Amazon notice the reader provides or look it up in the sender's connected Gmail account. Correlate it with the submission in `status --json`.
