@@ -4,10 +4,20 @@ Read papers from Zotero on a Kindle Scribe and save your handwritten notes back 
 
 ## Use with an agent
 
-Any agent that can read this checkout and run commands on the deployment host can follow these skills. Ask for the skill by name if your agent discovers it automatically, or copy one of these prompts.
+For a first-time setup, give this prompt to an agent with terminal access to the machine where Kindle Sync will run. It will use the [deployment skill](.agents/skills/kindle-sync-deploy/SKILL.md).
 
-- **[Deploy or upgrade](.agents/skills/kindle-sync-deploy/SKILL.md)** — “Read `.agents/skills/kindle-sync-deploy/SKILL.md` and deploy Kindle Sync on this Mac.”
-- **[Sync papers and notes](.agents/skills/kindle-sync/SKILL.md)** — “Read `.agents/skills/kindle-sync/SKILL.md` and preview what would sync.” You can also ask it to send unsent papers in ReadLater or bring back your Kindle notes.
+```text
+Deploy Kindle Sync on this machine. Clone https://github.com/jialuohu/kindle-sync.git
+and open the checkout. If GitHub needs me to sign in, guide me through it.
+Read .agents/skills/kindle-sync-deploy/SKILL.md and follow it to deploy the service.
+
+Guide me through account setup and any steps I need to do in my browser or on my Kindle.
+Show me where to enter credentials locally. Once the service is running, verify the
+startup sync and the next scheduled sync. Tell me what was sent, what notes were
+saved, and whether either sync reported errors.
+```
+
+After deployment, use the [sync skill](.agents/skills/kindle-sync/SKILL.md). Try “Preview my Kindle sync,” “Send the unsent papers in ReadLater,” or “Bring back my Kindle notes.”
 
 The first scan records papers already in the collection. Ask the agent to send those papers when you are ready. Papers added later go out automatically every five minutes while the service is running.
 
